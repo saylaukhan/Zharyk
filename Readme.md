@@ -1,1 +1,0 @@
-Zharyq EDTECH
