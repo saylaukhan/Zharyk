@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <script>
+        (function () {
+            const stored = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (stored === 'dark' || (!stored && prefersDark)) {
+                document.documentElement.classList.add('dark');
+            }
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) {
+                if (!localStorage.getItem('theme')) {
+                    document.documentElement.classList.toggle('dark', e.matches);
+                }
+            });
+        })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zharyq — Панель психолога</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link rel="stylesheet" href="styles.css">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        zharyq: {
+                            orange:        'var(--color-accent)',
+                            'orange-light':'var(--color-accent-light)',
+                            'orange-hover':'var(--color-accent-hover)',
+                            teal:          'var(--color-teal)',
+                            'teal-light':  'var(--color-teal-light)',
+                            dark:          'var(--color-text-primary)',
+                            gray:          'var(--color-text-secondary)',
+                            border:        'var(--color-border)',
+                            bg:            'var(--color-surface)'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-white text-zharyq-dark font-sans h-screen flex overflow-hidden selection:bg-zharyq-orange selection:text-white">
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside class="hidden md:flex flex-col w-1/5 min-w-[260px] max-w-[300px] bg-zharyq-bg border-r border-zharyq-border p-5 h-full">
+
+    <div class="flex items-center justify-between mb-8">
+        <a href="landing.html" class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded-full bg-zharyq-orange flex items-center justify-center">
+                <i data-lucide="sparkles" class="w-3 h-3 text-white"></i>
+            </div>
+            <span class="font-semibold text-lg tracking-tight">Zharyq</span>
+        </a>
+        <div class="flex items-center gap-2.5">
+            <button onclick="toggleTheme()" class="theme-toggle text-zharyq-gray hover:text-zharyq-dark transition-colors">
+                <span class="icon-sun"><i data-lucide="sun" class="w-[18px] h-[18px]"></i></span>
+                <span class="icon-moon"><i data-lucide="moon" class="w-[18px] h-[18px]"></i></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Role badge -->
+    <div class="flex items-center gap-2 px-3 py-2 rounded-xl mb-6" style="background: rgba(20,184,166,0.08); border: 1px solid rgba(20,184,166,0.2);">
+        <i data-lucide="shield-check" class="w-4 h-4 text-zharyq-teal shrink-0"></i>
+        <span class="text-xs font-semibold text-zharyq-teal">Роль: Психолог</span>
+    </div>
+
+    <div class="flex flex-col gap-1 mb-8">
+        <p class="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">Рабочее пространство</p>
+        <a href="#" onclick="showView('alerts'); return false;" data-view="alerts"
+           class="psych-nav flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors active-nav">
+            <i data-lucide="bell" class="w-4 h-4"></i>
+            Алерты
+            <span id="alert-badge" class="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">3</span>
+        </a>
+        <a href="#" onclick="showView('users'); return false;" data-view="users"
+           class="psych-nav flex items-center gap-3 px-3 py-2 text-sm text-zharyq-gray hover:bg-gray-100 rounded-lg transition-colors">
+            <i data-lucide="users" class="w-4 h-4"></i>
+            Мои подопечные
+        </a>
+        <a href="#" onclick="showView('sessions'); return false;" data-view="sessions"
+           class="psych-nav flex items-center gap-3 px-3 py-2 text-sm text-zharyq-gray hover:bg-gray-100 rounded-lg transition-colors">
+            <i data-lucide="calendar" class="w-4 h-4"></i>
+            Сессии
+        </a>
+        <a href="#" onclick="showView('notes'); return false;" data-view="notes"
+           class="psych-nav flex items-center gap-3 px-3 py-2 text-sm text-zharyq-gray hover:bg-gray-100 rounded-lg transition-colors">
+            <i data-lucide="file-text" class="w-4 h-4"></i>
+            Заметки
+        </a>
+    </div>
+
+    <div class="flex-1"></div>
+
+    <!-- Profile -->
+    <div class="pt-4 border-t border-zharyq-border mt-4 flex items-center gap-3">
+        <div class="w-8 h-8 bg-gradient-to-tr from-zharyq-teal to-blue-400 rounded-full flex items-center justify-center text-white text-xs font-bold">АК</div>
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium truncate">Айгуль К.</p>
+            <p class="text-[10px] text-zharyq-gray flex items-center gap-1">
+                <i data-lucide="shield-check" class="w-3 h-3"></i> Психолог
+            </p>
+        </div>
+        <a href="index.html" class="text-zharyq-gray hover:text-zharyq-dark transition-colors" title="Выйти">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+        </a>
+    </div>
+</aside>
+
+<!-- ===================== MAIN ===================== -->
+<main class="flex-1 flex flex-col h-full bg-white overflow-hidden">
+
+    <!-- Top bar -->
+    <header class="border-b border-zharyq-border px-6 py-4 flex items-center justify-between bg-white shrink-0">
+        <div>
+            <h1 id="page-title" class="text-lg font-semibold">Алерты</h1>
+            <p id="page-sub" class="text-xs text-zharyq-gray mt-0.5">Учащиеся, требующие внимания</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <div class="relative">
+                <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zharyq-gray pointer-events-none"></i>
+                <input type="text" placeholder="Поиск…" class="border border-zharyq-border rounded-xl pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52">
+            </div>
+            <select class="border border-zharyq-border rounded-xl px-3 py-2 text-sm bg-white text-zharyq-gray focus:ring-0 cursor-pointer">
+                <option>Все классы</option>
+                <option>10А</option>
+                <option>10Б</option>
+                <option>11А</option>
+            </select>
+        </div>
+    </header>
+
+    <!-- ===================== VIEW: ALERTS ===================== -->
+    <div id="view-alerts" class="flex-1 overflow-y-auto p-6">
+        <div class="max-w-4xl mx-auto">
+
+            <!-- Summary pills -->
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="border border-zharyq-border rounded-2xl p-4 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
+                        <i data-lucide="alert-triangle" class="w-5 h-5 text-red-500"></i>
+                    </div>
+                    <div>
+                        <p class="text-xl font-bold">3</p>
+                        <p class="text-xs text-zharyq-gray">Критических</p>
+                    </div>
+                </div>
+                <div class="border border-zharyq-border rounded-2xl p-4 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+                        <i data-lucide="activity" class="w-5 h-5 text-amber-500"></i>
+                    </div>
+                    <div>
+                        <p class="text-xl font-bold">7</p>
+                        <p class="text-xs text-zharyq-gray">Средних</p>
+                    </div>
+                </div>
+                <div class="border border-zharyq-border rounded-2xl p-4 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-zharyq-teal-light flex items-center justify-center shrink-0">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-zharyq-teal"></i>
+                    </div>
+                    <div>
+                        <p class="text-xl font-bold">24</p>
+                        <p class="text-xs text-zharyq-gray">В норме</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alerts table -->
+            <div class="border border-zharyq-border rounded-2xl overflow-hidden">
+                <div class="px-5 py-4 border-b border-zharyq-border flex items-center justify-between">
+                    <h2 class="text-sm font-semibold">Активные алерты</h2>
+                    <span class="text-[11px] text-zharyq-gray">Обновлено 2 мин назад</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-zharyq-border bg-zharyq-bg">
+                                <th class="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">Пользователь</th>
+                                <th class="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">Класс</th>
+                                <th class="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">Тип алерта</th>
+                                <th class="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">Уровень</th>
+                                <th class="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">Время</th>
+                                <th class="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center text-xs font-bold text-red-500">U12</div>
+                                        <span class="text-sm font-medium">Аноним #12</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5 text-zharyq-gray text-xs">10А</td>
+                                <td class="px-5 py-3.5 text-xs font-medium">Высокий стресс</td>
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Критический
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">Только что</td>
+                                <td class="px-5 py-3.5">
+                                    <button onclick="openProfile('12')" class="text-xs font-medium text-zharyq-orange hover:underline">Просмотреть</button>
+                                </td>
+                            </tr>
+                            <tr class="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center text-xs font-bold text-red-500">U5</div>
+                                        <span class="text-sm font-medium">Аноним #5</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5 text-zharyq-gray text-xs">11А</td>
+                                <td class="px-5 py-3.5 text-xs font-medium">Признаки выгорания</td>
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Критический
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">15 мин назад</td>
+                                <td class="px-5 py-3.5">
+                                    <button onclick="openProfile('5')" class="text-xs font-medium text-zharyq-orange hover:underline">Просмотреть</button>
+                                </td>
+                            </tr>
+                            <tr class="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center text-xs font-bold text-red-500">U19</div>
+                                        <span class="text-sm font-medium">Аноним #19</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5 text-zharyq-gray text-xs">10Б</td>
+                                <td class="px-5 py-3.5 text-xs font-medium">Тревожность</td>
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Критический
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">1 ч назад</td>
+                                <td class="px-5 py-3.5">
+                                    <button onclick="openProfile('19')" class="text-xs font-medium text-zharyq-orange hover:underline">Просмотреть</button>
+                                </td>
+                            </tr>
+                            <tr class="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-600">U7</div>
+                                        <span class="text-sm font-medium">Аноним #7</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5 text-zharyq-gray text-xs">10А</td>
+                                <td class="px-5 py-3.5 text-xs font-medium">Снижение мотивации</td>
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Средний
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">2 ч назад</td>
+                                <td class="px-5 py-3.5">
+                                    <button onclick="openProfile('7')" class="text-xs font-medium text-zharyq-orange hover:underline">Просмотреть</button>
+                                </td>
+                            </tr>
+                            <tr class="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
+                                <td class="px-5 py-3.5">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-600">U21</div>
+                                        <span class="text-sm font-medium">Аноним #21</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5 text-zharyq-gray text-xs">11А</td>
+                                <td class="px-5 py-3.5 text-xs font-medium">Эмоциональный спад</td>
+                                <td class="px-5 py-3.5">
+                                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Средний
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">3 ч назад</td>
+                                <td class="px-5 py-3.5">
+                                    <button onclick="openProfile('21')" class="text-xs font-medium text-zharyq-orange hover:underline">Просмотреть</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== VIEW: USERS ===================== -->
+    <div id="view-users" class="flex-1 overflow-y-auto p-6" style="display:none;">
+        <div class="max-w-4xl mx-auto">
+
+            <!-- Class tabs -->
+            <div class="flex gap-1 p-1 bg-zharyq-bg border border-zharyq-border rounded-xl w-fit mb-6">
+                <button onclick="setClassTab(this,'10A')" class="class-tab-btn px-4 py-1.5 rounded-lg text-sm font-medium text-white transition-colors" style="background: var(--color-accent);">10А</button>
+                <button onclick="setClassTab(this,'10B')" class="class-tab-btn px-4 py-1.5 rounded-lg text-sm font-medium text-zharyq-gray hover:text-zharyq-dark transition-colors">10Б</button>
+                <button onclick="setClassTab(this,'11A')" class="class-tab-btn px-4 py-1.5 rounded-lg text-sm font-medium text-zharyq-gray hover:text-zharyq-dark transition-colors">11А</button>
+            </div>
+
+            <!-- User grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- User card template (repeated) -->
+                <div onclick="openProfile('3')" class="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-zharyq-teal to-blue-400 flex items-center justify-center text-white text-xs font-bold shrink-0">U3</div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">Аноним #3</p>
+                            <p class="text-xs text-zharyq-gray">10А · Последний вход: сегодня</p>
+                        </div>
+                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full" style="background: var(--color-teal-light); color: var(--color-teal); border: 1px solid rgba(20,184,166,0.2);">Норма</span>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zharyq-gray w-16 shrink-0">Стресс</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-1">
+                                <div class="h-1 rounded-full" style="width:35%; background:var(--color-accent);"></div>
+                            </div>
+                            <span class="text-zharyq-gray w-5 text-right">35</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zharyq-gray w-16 shrink-0">Мотивация</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-1">
+                                <div class="h-1 rounded-full" style="width:78%; background:var(--color-teal);"></div>
+                            </div>
+                            <span class="text-zharyq-gray w-5 text-right">78</span>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-zharyq-gray mt-3 flex items-center gap-1">
+                        <i data-lucide="message-circle" class="w-3 h-3"></i> 12 сессий · 4 курса
+                    </p>
+                </div>
+
+                <div onclick="openProfile('8')" class="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-orange-300 to-red-400 flex items-center justify-center text-white text-xs font-bold shrink-0">U8</div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">Аноним #8</p>
+                            <p class="text-xs text-zharyq-gray">10А · Последний вход: вчера</p>
+                        </div>
+                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">Риск</span>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zharyq-gray w-16 shrink-0">Стресс</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-1">
+                                <div class="h-1 rounded-full bg-red-400" style="width:72%;"></div>
+                            </div>
+                            <span class="text-zharyq-gray w-5 text-right">72</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zharyq-gray w-16 shrink-0">Мотивация</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-1">
+                                <div class="h-1 rounded-full bg-amber-400" style="width:42%;"></div>
+                            </div>
+                            <span class="text-zharyq-gray w-5 text-right">42</span>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-zharyq-gray mt-3 flex items-center gap-1">
+                        <i data-lucide="message-circle" class="w-3 h-3"></i> 5 сессий · 1 курс
+                    </p>
+                </div>
+
+                <div onclick="openProfile('14')" class="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-violet-300 to-blue-400 flex items-center justify-center text-white text-xs font-bold shrink-0">U14</div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">Аноним #14</p>
+                            <p class="text-xs text-zharyq-gray">10А · Последний вход: 3 дн. назад</p>
+                        </div>
+                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full" style="background: var(--color-teal-light); color: var(--color-teal); border: 1px solid rgba(20,184,166,0.2);">Норма</span>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zharyq-gray w-16 shrink-0">Стресс</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-1">
+                                <div class="h-1 rounded-full" style="width:28%; background:var(--color-accent);"></div>
+                            </div>
+                            <span class="text-zharyq-gray w-5 text-right">28</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zharyq-gray w-16 shrink-0">Мотивация</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-1">
+                                <div class="h-1 rounded-full" style="width:85%; background:var(--color-teal);"></div>
+                            </div>
+                            <span class="text-zharyq-gray w-5 text-right">85</span>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-zharyq-gray mt-3 flex items-center gap-1">
+                        <i data-lucide="message-circle" class="w-3 h-3"></i> 8 сессий · 3 курса
+                    </p>
+                </div>
+
+                <div onclick="openProfile('2')" class="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-green-300 to-teal-400 flex items-center justify-center text-white text-xs font-bold shrink-0">U2</div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">Аноним #2</p>
+                            <p class="text-xs text-zharyq-gray">10А · Последний вход: сегодня</p>
+                        </div>
+                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-100">Алерт</span>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zharyq-gray w-16 shrink-0">Стресс</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-1">
+                                <div class="h-1 rounded-full bg-red-400" style="width:88%;"></div>
+                            </div>
+                            <span class="text-zharyq-gray w-5 text-right">88</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zharyq-gray w-16 shrink-0">Мотивация</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-1">
+                                <div class="h-1 rounded-full bg-amber-400" style="width:25%;"></div>
+                            </div>
+                            <span class="text-zharyq-gray w-5 text-right">25</span>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-zharyq-gray mt-3 flex items-center gap-1">
+                        <i data-lucide="message-circle" class="w-3 h-3"></i> 2 сессии · 0 курсов
+                    </p>
+                </div>
+
+                <div onclick="openProfile('17')" class="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-300 to-indigo-400 flex items-center justify-center text-white text-xs font-bold shrink-0">U17</div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">Аноним #17</p>
+                            <p class="text-xs text-zharyq-gray">10А · Последний вход: 2 дн. назад</p>
+                        </div>
+                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full" style="background: var(--color-teal-light); color: var(--color-teal); border: 1px solid rgba(20,184,166,0.2);">Норма</span>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zharyq-gray w-16 shrink-0">Стресс</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-1">
+                                <div class="h-1 rounded-full" style="width:45%; background:var(--color-accent);"></div>
+                            </div>
+                            <span class="text-zharyq-gray w-5 text-right">45</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zharyq-gray w-16 shrink-0">Мотивация</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-1">
+                                <div class="h-1 rounded-full" style="width:65%; background:var(--color-teal);"></div>
+                            </div>
+                            <span class="text-zharyq-gray w-5 text-right">65</span>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-zharyq-gray mt-3 flex items-center gap-1">
+                        <i data-lucide="message-circle" class="w-3 h-3"></i> 7 сессий · 2 курса
+                    </p>
+                </div>
+
+                <div onclick="openProfile('9')" class="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group border-dashed opacity-60">
+                    <div class="flex flex-col items-center justify-center h-full py-6 gap-2 text-zharyq-gray">
+                        <i data-lucide="user-plus" class="w-6 h-6"></i>
+                        <span class="text-xs">Назначить ещё</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== VIEW: SESSIONS ===================== -->
+    <div id="view-sessions" class="flex-1 overflow-y-auto p-6" style="display:none;">
+        <div class="max-w-3xl mx-auto">
+            <div class="border border-zharyq-border rounded-2xl overflow-hidden">
+                <div class="px-5 py-4 border-b border-zharyq-border">
+                    <h2 class="text-sm font-semibold">Запланированные сессии</h2>
+                </div>
+                <div class="divide-y divide-zharyq-border">
+                    <div class="flex items-center gap-4 px-5 py-4 hover:bg-zharyq-bg transition-colors">
+                        <div class="w-10 h-10 rounded-xl bg-orange-50 flex flex-col items-center justify-center shrink-0">
+                            <span class="text-[10px] text-zharyq-orange font-semibold">МАР</span>
+                            <span class="text-sm font-bold text-zharyq-orange leading-tight">14</span>
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-sm font-medium">Сессия с Аноним #12</p>
+                            <p class="text-xs text-zharyq-gray">14:00 — 14:50 · Высокий стресс</p>
+                        </div>
+                        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-100">Срочная</span>
+                    </div>
+                    <div class="flex items-center gap-4 px-5 py-4 hover:bg-zharyq-bg transition-colors">
+                        <div class="w-10 h-10 rounded-xl bg-zharyq-teal-light flex flex-col items-center justify-center shrink-0">
+                            <span class="text-[10px] text-zharyq-teal font-semibold">МАР</span>
+                            <span class="text-sm font-bold text-zharyq-teal leading-tight">15</span>
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-sm font-medium">Групповая работа 10А</p>
+                            <p class="text-xs text-zharyq-gray">11:00 — 12:00 · Техники релаксации</p>
+                        </div>
+                        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" style="background:var(--color-teal-light); color:var(--color-teal); border:1px solid rgba(20,184,166,0.2);">Групповая</span>
+                    </div>
+                    <div class="flex items-center gap-4 px-5 py-4 hover:bg-zharyq-bg transition-colors">
+                        <div class="w-10 h-10 rounded-xl bg-blue-50 flex flex-col items-center justify-center shrink-0">
+                            <span class="text-[10px] text-blue-500 font-semibold">МАР</span>
+                            <span class="text-sm font-bold text-blue-500 leading-tight">17</span>
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-sm font-medium">Сессия с Аноним #5</p>
+                            <p class="text-xs text-zharyq-gray">15:30 — 16:20 · Выгорание</p>
+                        </div>
+                        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">Плановая</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== VIEW: NOTES ===================== -->
+    <div id="view-notes" class="flex-1 overflow-y-auto p-6" style="display:none;">
+        <div class="max-w-3xl mx-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-sm font-semibold">Клинические заметки</h2>
+                <button class="text-xs font-medium text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors" style="background:var(--color-accent);">
+                    <i data-lucide="plus" class="w-3.5 h-3.5"></i> Новая заметка
+                </button>
+            </div>
+            <div class="flex flex-col gap-3">
+                <div class="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer">
+                    <div class="flex items-start justify-between gap-3 mb-2">
+                        <div class="flex items-center gap-2">
+                            <div class="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center text-[10px] font-bold text-red-500">U12</div>
+                            <span class="text-sm font-semibold">Аноним #12</span>
+                        </div>
+                        <span class="text-[11px] text-zharyq-gray shrink-0">13 мар 2025</span>
+                    </div>
+                    <p class="text-xs text-zharyq-gray leading-relaxed">Наблюдается значительное повышение уровня стресса, связанное с приближением ЕНТ. Рекомендованы техники дыхания 4-7-8 и ограничение времени подготовки до 4 часов в день.</p>
+                    <div class="flex gap-2 mt-3">
+                        <span class="text-[10px] text-zharyq-orange bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-full">Стресс</span>
+                        <span class="text-[10px] text-zharyq-gray bg-gray-100 px-2 py-0.5 rounded-full">ЕНТ</span>
+                    </div>
+                </div>
+                <div class="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer">
+                    <div class="flex items-start justify-between gap-3 mb-2">
+                        <div class="flex items-center gap-2">
+                            <div class="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center text-[10px] font-bold text-amber-600">U5</div>
+                            <span class="text-sm font-semibold">Аноним #5</span>
+                        </div>
+                        <span class="text-[11px] text-zharyq-gray shrink-0">10 мар 2025</span>
+                    </div>
+                    <p class="text-xs text-zharyq-gray leading-relaxed">Признаки профессионального выгорания. Потеря интереса к учёбе, сонливость, раздражительность. Назначен курс «Профилактика выгорания». Следующая встреча через 5 дней.</p>
+                    <div class="flex gap-2 mt-3">
+                        <span class="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">Выгорание</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</main>
+
+<!-- ===================== PROFILE DRAWER ===================== -->
+<div id="profile-overlay" class="fixed inset-0 bg-black/30 z-40 opacity-0 pointer-events-none transition-opacity duration-200" onclick="closeProfile()"></div>
+<aside id="profile-drawer" class="fixed top-0 right-0 h-full w-full max-w-sm bg-white border-l border-zharyq-border z-50 translate-x-full transition-transform duration-300 overflow-y-auto flex flex-col">
+    <div class="p-5 border-b border-zharyq-border flex items-center justify-between">
+        <h2 class="text-sm font-semibold">Профиль учащегося</h2>
+        <button onclick="closeProfile()" class="text-zharyq-gray hover:text-zharyq-dark transition-colors">
+            <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+    </div>
+    <div class="p-5 flex-1">
+        <div class="flex items-center gap-3 mb-5 pb-5 border-b border-zharyq-border">
+            <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-orange-300 to-red-400 flex items-center justify-center text-white text-sm font-bold">U12</div>
+            <div>
+                <p class="font-semibold">Аноним #12</p>
+                <p class="text-xs text-zharyq-gray">10А · Последний чек-ин: сегодня</p>
+            </div>
+            <span class="ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-100">Критический</span>
+        </div>
+
+        <!-- Radar -->
+        <p class="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Психологический профиль</p>
+        <div class="w-full aspect-square max-w-[240px] mx-auto mb-5">
+            <canvas id="drawer-radar"></canvas>
+        </div>
+
+        <!-- Metrics -->
+        <div class="grid grid-cols-2 gap-3 mb-5">
+            <div class="border border-zharyq-border rounded-xl p-3">
+                <p class="text-xs text-zharyq-gray mb-1">Стресс</p>
+                <div class="flex items-end gap-2">
+                    <p class="text-xl font-bold text-red-500">82</p>
+                    <span class="text-[10px] text-red-400 mb-0.5">↑ +12</span>
+                </div>
+            </div>
+            <div class="border border-zharyq-border rounded-xl p-3">
+                <p class="text-xs text-zharyq-gray mb-1">Мотивация</p>
+                <div class="flex items-end gap-2">
+                    <p class="text-xl font-bold text-amber-500">31</p>
+                    <span class="text-[10px] text-amber-400 mb-0.5">↓ -18</span>
+                </div>
+            </div>
+            <div class="border border-zharyq-border rounded-xl p-3">
+                <p class="text-xs text-zharyq-gray mb-1">Тревожность</p>
+                <div class="flex items-end gap-2">
+                    <p class="text-xl font-bold text-red-500">74</p>
+                    <span class="text-[10px] text-red-400 mb-0.5">↑ +8</span>
+                </div>
+            </div>
+            <div class="border border-zharyq-border rounded-xl p-3">
+                <p class="text-xs text-zharyq-gray mb-1">Курсов пройдено</p>
+                <div class="flex items-end gap-2">
+                    <p class="text-xl font-bold">1</p>
+                    <span class="text-[10px] text-zharyq-gray mb-0.5">из 5</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI recommendation -->
+        <div class="border border-zharyq-border rounded-xl p-3.5 mb-5" style="background: var(--color-accent-light); border-color: rgba(255,113,0,0.2);">
+            <div class="flex items-start gap-2">
+                <i data-lucide="sparkles" class="w-4 h-4 shrink-0 mt-0.5" style="color:var(--color-accent);"></i>
+                <div>
+                    <p class="text-xs font-semibold mb-1" style="color:var(--color-accent);">Рекомендация AI</p>
+                    <p class="text-xs text-zharyq-gray leading-relaxed">Уровень стресса критически высок. Рекомендуется немедленная личная консультация и назначение курса «Управление стрессом».</p>
+                </div>
+            </div>
+        </div>
+
+        <button class="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-colors" style="background:var(--color-accent);">
+            <i data-lucide="calendar" class="w-4 h-4 inline mr-2"></i>
+            Назначить сессию
+        </button>
+    </div>
+</aside>
+
+<script>
+    lucide.createIcons();
+
+    function toggleTheme() {
+        const html = document.documentElement;
+        html.classList.add('theme-transitioning');
+        const isDark = html.classList.toggle('dark');
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        setTimeout(() => html.classList.remove('theme-transitioning'), 400);
+    }
+
+    const views = ['alerts', 'users', 'sessions', 'notes'];
+    const titles = {
+        alerts:   ['Алерты', 'Учащиеся, требующие внимания'],
+        users:    ['Мои подопечные', 'Назначенные учащиеся'],
+        sessions: ['Сессии', 'Запланированные встречи'],
+        notes:    ['Заметки', 'Клинические наблюдения'],
+    };
+
+    function showView(name) {
+        views.forEach(v => {
+            document.getElementById('view-' + v).style.display = v === name ? '' : 'none';
+        });
+        document.querySelectorAll('.psych-nav').forEach(el => {
+            const isActive = el.dataset.view === name;
+            el.classList.toggle('active-nav', isActive);
+            el.classList.toggle('text-zharyq-gray', !isActive);
+            el.classList.toggle('hover:bg-gray-100', !isActive);
+        });
+        document.getElementById('page-title').textContent = titles[name][0];
+        document.getElementById('page-sub').textContent   = titles[name][1];
+        lucide.createIcons();
+    }
+
+    function setClassTab(btn) {
+        document.querySelectorAll('.class-tab-btn').forEach(b => {
+            b.style.background = 'transparent';
+            b.style.color = '';
+            b.classList.add('text-zharyq-gray');
+            b.classList.remove('text-white');
+        });
+        btn.style.background = 'var(--color-accent)';
+        btn.classList.remove('text-zharyq-gray');
+        btn.classList.add('text-white');
+    }
+
+    let drawerChart;
+    function openProfile(id) {
+        document.getElementById('profile-overlay').classList.remove('opacity-0', 'pointer-events-none');
+        document.getElementById('profile-drawer').classList.remove('translate-x-full');
+        if (!drawerChart) {
+            const ctx = document.getElementById('drawer-radar').getContext('2d');
+            drawerChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['Стресс', 'Выгорание', 'Тревога', 'Мотивация', 'Эмоции'],
+                    datasets: [{
+                        data: [82, 65, 74, 31, 45],
+                        backgroundColor: 'rgba(239,68,68,0.12)',
+                        borderColor: '#ef4444',
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#ef4444',
+                        pointRadius: 3,
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        r: {
+                            angleLines: { color: 'var(--color-chart-grid)' },
+                            grid:       { color: 'var(--color-chart-grid)' },
+                            pointLabels: { font: { family: 'Inter', size: 11, weight: 500 }, color: 'var(--color-text-secondary)' },
+                            ticks: { display: false, min: 0, max: 100 }
+                        }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+        lucide.createIcons();
+    }
+
+    function closeProfile() {
+        document.getElementById('profile-overlay').classList.add('opacity-0', 'pointer-events-none');
+        document.getElementById('profile-drawer').classList.add('translate-x-full');
+    }
+
+    // Active nav style injection
+    const style = document.createElement('style');
+    style.textContent = `
+        .active-nav {
+            background: var(--color-accent-light);
+            color: var(--color-accent);
+            font-weight: 500;
+        }
+        .dark .active-nav { background: var(--color-accent-light); }
+    `;
+    document.head.appendChild(style);
+</script>
+</body>
+</html>
