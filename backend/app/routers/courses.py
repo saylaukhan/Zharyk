@@ -10,7 +10,7 @@ from ..database import get_db
 from ..models import Course, CourseModule, TheoryModule, PracticeModule, CourseProgress, ModuleType, CourseStatus
 from ..schemas import (
     CourseCreate, CourseUpdate, CourseOut, CourseDetail,
-    CourseModuleCreate, CourseModuleOut, CourseModuleNameUpdate,
+    CourseModuleCreate, CourseModuleOut,
     TheoryModuleUpdate, TheoryModuleOut,
     PracticeModuleUpdate, PracticeModuleOut,
     CourseProgressCreate, CourseProgressOut,
