@@ -4,26 +4,21 @@ from typing import List
 
 from ..database import get_db
 from ..models import User
-from ..schemas import UserCreate, UserOut
+from ..schemas import UserOut
+from ..auth import get_current_user, require_roles
+from ..models import UserRole
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("/", response_model=List[UserOut])
-def list_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_users(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.psychologist, UserRole.director)),
+):
     return db.query(User).offset(skip).limit(limit).all()
-
-
-@router.post("/", response_model=UserOut)
-def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.anonymous_id == user.anonymous_id).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="User already exists")
-    db_user = User(**user.model_dump())
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
 
 
 @router.get("/{user_id}", response_model=UserOut)

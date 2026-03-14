@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Sparkles, Sun, Moon, MessageCircle, ArrowDown, LayoutGrid, Bot,
   ShieldCheck, BookOpen, BarChart2, Users, Check, Lock, ArrowUp,
-  ChevronRight
+  ChevronRight, Eye, EyeOff, X
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 import { Radar } from 'react-chartjs-2'
 import {
   Chart as ChartJS, RadialLinearScale, PointElement, LineElement,
@@ -22,11 +23,77 @@ function getChartTextColor() {
 const TABS = ['students', 'psychologists', 'management']
 const TAB_LABELS = { students: 'Ученики / Сотрудники', psychologists: 'Психологи', management: 'Руководство' }
 
+const ROLE_ROUTES = { student: '/app', employee: '/app', psychologist: '/psychologist', director: '/director' }
+
 export default function Landing() {
   const { isDark } = useTheme()
+  const { login, register } = useAuth()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('students')
   const [showAiReply, setShowAiReply] = useState(false)
   const headerRef = useRef(null)
+  const [loginOpen, setLoginOpen] = useState(false)
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' })
+  const [showPass, setShowPass] = useState(false)
+  const [loginError, setLoginError] = useState('')
+  const [loginLoading, setLoginLoading] = useState(false)
+
+  const [registerOpen, setRegisterOpen] = useState(false)
+  const [regForm, setRegForm] = useState({ username: '', email: '', password: '', role: 'student', class_name: '' })
+  const [showRegPass, setShowRegPass] = useState(false)
+  const [regError, setRegError] = useState('')
+  const [regLoading, setRegLoading] = useState(false)
+
+  const handleLogin = async (e) => {
+    e.preventDefault()
+    setLoginError('')
+    setLoginLoading(true)
+    try {
+      const role = await login(loginForm.username, loginForm.password)
+      setLoginOpen(false)
+      navigate(ROLE_ROUTES[role] || '/app')
+    } catch (err) {
+      setLoginError(err.message)
+    } finally {
+      setLoginLoading(false)
+    }
+  }
+
+  const handleRegister = async (e) => {
+    e.preventDefault()
+    setRegError('')
+    if (regForm.password.length < 6) { setRegError('Пароль должен быть не менее 6 символов'); return }
+    setRegLoading(true)
+    try {
+      const payload = { ...regForm }
+      if (!payload.class_name) delete payload.class_name
+      await register(payload)
+      setRegisterOpen(false)
+      setLoginOpen(true)
+      setLoginForm({ username: regForm.username, password: '' })
+      setLoginError('')
+    } catch (err) {
+      setRegError(err.message)
+    } finally {
+      setRegLoading(false)
+    }
+  }
+
+  const openLogin = () => {
+    setLoginForm({ username: '', password: '' })
+    setLoginError('')
+    setShowPass(false)
+    setRegisterOpen(false)
+    setLoginOpen(true)
+  }
+
+  const openRegister = () => {
+    setRegForm({ username: '', email: '', password: '', role: 'student', class_name: '' })
+    setRegError('')
+    setShowRegPass(false)
+    setLoginOpen(false)
+    setRegisterOpen(true)
+  }
 
   useEffect(() => {
     const t1 = setTimeout(() => setShowAiReply(true), 3200)
@@ -71,7 +138,7 @@ export default function Landing() {
   }
 
   return (
-    <div className="bg-white text-zharyq-dark font-sans antialiased selection:bg-zharyq-orange selection:text-white">
+    <div className="font-sans antialiased selection:bg-zharyq-orange selection:text-white" style={{ background: 'var(--color-bg)', color: 'var(--color-text-primary)' }}>
       <header
         ref={headerRef}
         id="site-header"
@@ -91,12 +158,8 @@ export default function Landing() {
           </nav>
           <div className="flex items-center gap-3 shrink-0">
             <ThemeToggle />
-            <Link to="/app">
-              <button className="px-4 py-2 border border-zharyq-border rounded-[10px] text-sm font-medium hover:border-zharyq-gray transition-colors">Войти</button>
-            </Link>
-            <Link to="/app">
-              <button className="px-4 py-2 rounded-[10px] text-sm font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-colors">Попробовать</button>
-            </Link>
+            <button onClick={openLogin} className="px-4 py-2 border border-zharyq-border rounded-[10px] text-sm font-medium hover:border-zharyq-gray transition-colors">Войти</button>
+            <button onClick={openRegister} className="px-4 py-2 rounded-[10px] text-sm font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-colors">Попробовать</button>
           </div>
         </div>
       </header>
@@ -117,12 +180,10 @@ export default function Landing() {
               Платформа психологической поддержки с AI-ассистентом для учащихся и сотрудников.
             </p>
             <div className="flex flex-wrap gap-3">
-              <Link to="/app">
-                <button className="flex items-center gap-2 px-7 py-3 rounded-xl text-[0.9375rem] font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-all hover:-translate-y-px">
+              <button onClick={openRegister} className="flex items-center gap-2 px-7 py-3 rounded-xl text-[0.9375rem] font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-all hover:-translate-y-px">
                   <MessageCircle size={16} />
                   Начать первый чек-ин
                 </button>
-              </Link>
               <a href="#features">
                 <button className="flex items-center gap-2 px-7 py-3 rounded-xl text-[0.9375rem] font-medium border border-zharyq-border hover:border-zharyq-gray transition-all hover:-translate-y-px">
                   Узнать подробнее
@@ -150,7 +211,7 @@ export default function Landing() {
 
           {/* Chat Mockup */}
           <div className="flex items-center justify-center">
-            <div className="w-full max-w-sm rounded-2xl border border-zharyq-border bg-white shadow-xl overflow-hidden">
+            <div className="w-full max-w-sm rounded-2xl border border-zharyq-border shadow-xl overflow-hidden" style={{ background: 'var(--color-surface)' }}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-zharyq-border bg-zharyq-bg">
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 rounded-full bg-zharyq-orange flex items-center justify-center">
@@ -200,8 +261,8 @@ export default function Landing() {
                 )}
               </div>
               <div className="px-4 pb-3 flex gap-2 flex-wrap">
-                <button className="bg-white border border-zharyq-border text-xs px-3 py-1.5 rounded-xl text-zharyq-dark hover:border-zharyq-orange transition-colors">Начать чек-ин</button>
-                <button className="bg-white border border-zharyq-border text-xs px-3 py-1.5 rounded-xl text-zharyq-dark hover:border-zharyq-orange transition-colors">Выговориться</button>
+                <button className="border border-zharyq-border text-xs px-3 py-1.5 rounded-xl text-zharyq-dark hover:border-zharyq-orange transition-colors" style={{ background: 'var(--color-bg)' }}>Начать чек-ин</button>
+                <button className="border border-zharyq-border text-xs px-3 py-1.5 rounded-xl text-zharyq-dark hover:border-zharyq-orange transition-colors" style={{ background: 'var(--color-bg)' }}>Выговориться</button>
               </div>
               <div className="px-3 pb-3">
                 <div className="flex items-center gap-2 border border-zharyq-border rounded-xl px-3 py-2 bg-zharyq-bg">
@@ -232,7 +293,7 @@ export default function Landing() {
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-5">
-            <div className="bento-card md:col-span-2 p-7 flex flex-col justify-between min-h-[260px]" style={{ background: '#F9FAFB', border: '1px solid var(--color-border)', borderRadius: '16px', transition: 'box-shadow 0.2s, border-color 0.2s' }}>
+            <div className="bento-card md:col-span-2 p-7 flex flex-col justify-between min-h-[260px]" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '16px', transition: 'box-shadow 0.2s, border-color 0.2s' }}>
               <div>
                 <div className="w-11 h-11 rounded-xl bg-orange-50 flex items-center justify-center mb-5">
                   <Bot size={20} style={{ color: 'var(--color-accent)' }} />
@@ -247,7 +308,7 @@ export default function Landing() {
                   <div className="w-5 h-5 rounded-full bg-zharyq-orange flex items-center justify-center shrink-0">
                     <Sparkles size={10} className="text-white" />
                   </div>
-                  <div className="bg-white border border-zharyq-border text-xs px-3 py-2 rounded-xl rounded-tl-sm max-w-[85%] text-zharyq-dark">
+                  <div className="border border-zharyq-border text-xs px-3 py-2 rounded-xl rounded-tl-sm max-w-[85%] text-zharyq-dark" style={{ background: 'var(--color-bg)' }}>
                     Оцените своё состояние по шкале от 1 до 10 прямо сейчас.
                   </div>
                 </div>
@@ -258,7 +319,7 @@ export default function Landing() {
                 </div>
               </div>
             </div>
-            <div className="p-7 flex flex-col" style={{ background: '#F9FAFB', border: '1px solid var(--color-border)', borderRadius: '16px' }}>
+            <div className="p-7 flex flex-col" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '16px' }}>
               <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-5" style={{ background: 'var(--color-teal-light)' }}>
                 <ShieldCheck size={20} style={{ color: 'var(--color-teal)' }} />
               </div>
@@ -271,7 +332,7 @@ export default function Landing() {
                 End-to-end шифрование
               </div>
             </div>
-            <div className="p-7 flex flex-col" style={{ background: '#F9FAFB', border: '1px solid var(--color-border)', borderRadius: '16px' }}>
+            <div className="p-7 flex flex-col" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '16px' }}>
               <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center mb-5">
                 <BookOpen size={20} className="text-blue-500" />
               </div>
@@ -281,14 +342,14 @@ export default function Landing() {
               </p>
               <div className="mt-5 grid grid-cols-2 gap-2">
                 {[['var(--color-accent)', 'Стресс'], ['#60A5FA', 'Фокус'], ['var(--color-teal)', 'Выгорание'], ['#A78BFA', 'Эмоции']].map(([color, label]) => (
-                  <div key={label} className="text-[11px] text-zharyq-gray bg-white border border-zharyq-border px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
+                  <div key={label} className="text-[11px] text-zharyq-gray border border-zharyq-border px-2.5 py-1.5 rounded-lg flex items-center gap-1.5" style={{ background: 'var(--color-bg)' }}>
                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
                     {label}
                   </div>
                 ))}
               </div>
             </div>
-            <div className="md:col-span-2 p-7 flex flex-col md:flex-row gap-8 items-center" style={{ background: '#F9FAFB', border: '1px solid var(--color-border)', borderRadius: '16px' }}>
+            <div className="md:col-span-2 p-7 flex flex-col md:flex-row gap-8 items-center" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '16px' }}>
               <div className="flex-1">
                 <div className="w-11 h-11 rounded-xl bg-violet-50 flex items-center justify-center mb-5">
                   <BarChart2 size={20} className="text-violet-500" />
@@ -348,11 +409,9 @@ export default function Landing() {
                     </li>
                   ))}
                 </ul>
-                <Link to="/app">
-                  <button className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-all">
+                <button onClick={openRegister} className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-all">
                     Попробовать бесплатно <ChevronRight size={16} />
                   </button>
-                </Link>
               </div>
               <div className="flex-1 flex justify-center">
                 <div className="w-full max-w-xs rounded-2xl border border-zharyq-border bg-white p-5 shadow-sm">
@@ -427,11 +486,9 @@ export default function Landing() {
                     </li>
                   ))}
                 </ul>
-                <Link to="/director">
-                  <button className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-violet-500 hover:bg-violet-600 transition-all">
+                <button onClick={openLogin} className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-violet-500 hover:bg-violet-600 transition-all">
                     Director Dashboard <ChevronRight size={16} />
                   </button>
-                </Link>
               </div>
               <div className="flex-1 flex justify-center">
                 <div className="w-full max-w-xs rounded-2xl border border-zharyq-border bg-white p-5 shadow-sm space-y-3">
@@ -467,12 +524,10 @@ export default function Landing() {
           <p className="text-zharyq-gray text-lg mb-8">
             Первый чек-ин займёт меньше 3 минут. Полностью анонимно.
           </p>
-          <Link to="/app">
-            <button className="flex items-center gap-2 px-8 py-4 rounded-xl text-base font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-all hover:-translate-y-px mx-auto">
+          <button onClick={openRegister} className="flex items-center gap-2 px-8 py-4 rounded-xl text-base font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-all hover:-translate-y-px mx-auto">
               <MessageCircle size={18} />
               Начать первый чек-ин
             </button>
-          </Link>
         </div>
       </section>
 
@@ -505,6 +560,207 @@ export default function Landing() {
         .dark #site-header { background-color: var(--color-bg); border-color: var(--color-border); }
         .dark footer { background-color: var(--color-bg); border-color: var(--color-border); }
       `}</style>
+
+      {loginOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setLoginOpen(false) }}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-900 border border-zharyq-border shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-zharyq-orange flex items-center justify-center">
+                  <Sparkles size={12} className="text-white" />
+                </div>
+                <span className="font-semibold text-zharyq-dark">Вход в Zharyq</span>
+              </div>
+              <button onClick={() => setLoginOpen(false)} className="text-zharyq-gray hover:text-zharyq-dark transition">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleLogin} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-zharyq-dark">Имя пользователя</label>
+                <input
+                  value={loginForm.username}
+                  onChange={e => setLoginForm(f => ({ ...f, username: e.target.value }))}
+                  required
+                  autoFocus
+                  autoComplete="username"
+                  placeholder="your_username"
+                  className="px-3 py-2 rounded-xl border border-zharyq-border bg-zharyq-bg text-zharyq-dark text-sm outline-none focus:border-zharyq-teal transition"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-zharyq-dark">Пароль</label>
+                <div className="relative">
+                  <input
+                    type={showPass ? 'text' : 'password'}
+                    value={loginForm.password}
+                    onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))}
+                    required
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    className="w-full px-3 py-2 pr-10 rounded-xl border border-zharyq-border bg-zharyq-bg text-zharyq-dark text-sm outline-none focus:border-zharyq-teal transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPass(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zharyq-gray hover:text-zharyq-dark transition"
+                  >
+                    {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+
+              {loginError && (
+                <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{loginError}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={loginLoading}
+                className="py-2.5 rounded-xl bg-zharyq-orange text-white font-semibold text-sm hover:bg-zharyq-orange-hover transition disabled:opacity-60"
+              >
+                {loginLoading ? 'Входим...' : 'Войти'}
+              </button>
+            </form>
+
+            <p className="mt-4 text-center text-sm text-zharyq-gray">
+              Нет аккаунта?{' '}
+              <button type="button" onClick={openRegister} className="text-zharyq-teal font-medium hover:underline">
+                Зарегистрироваться
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
+
+      {registerOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setRegisterOpen(false) }}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-900 border border-zharyq-border shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-zharyq-orange flex items-center justify-center">
+                  <Sparkles size={12} className="text-white" />
+                </div>
+                <span className="font-semibold text-zharyq-dark">Регистрация в Zharyq</span>
+              </div>
+              <button onClick={() => setRegisterOpen(false)} className="text-zharyq-gray hover:text-zharyq-dark transition">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRegister} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-zharyq-dark">Роль</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[{v:'student',l:'Ученик'},{v:'employee',l:'Сотрудник'},{v:'psychologist',l:'Психолог'},{v:'director',l:'Директор'}].map(r => (
+                    <button
+                      key={r.v}
+                      type="button"
+                      onClick={() => setRegForm(f => ({ ...f, role: r.v }))}
+                      className={`py-2 px-3 rounded-xl border text-sm font-medium transition ${
+                        regForm.role === r.v
+                          ? 'border-zharyq-teal bg-zharyq-teal-light text-zharyq-teal'
+                          : 'border-zharyq-border text-zharyq-gray hover:border-zharyq-teal'
+                      }`}
+                    >
+                      {r.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-zharyq-dark">Имя пользователя</label>
+                <input
+                  value={regForm.username}
+                  onChange={e => setRegForm(f => ({ ...f, username: e.target.value }))}
+                  required
+                  autoFocus
+                  autoComplete="username"
+                  placeholder="your_username"
+                  className="px-3 py-2 rounded-xl border border-zharyq-border bg-zharyq-bg text-zharyq-dark text-sm outline-none focus:border-zharyq-teal transition"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-zharyq-dark">Email</label>
+                <input
+                  type="email"
+                  value={regForm.email}
+                  onChange={e => setRegForm(f => ({ ...f, email: e.target.value }))}
+                  required
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  className="px-3 py-2 rounded-xl border border-zharyq-border bg-zharyq-bg text-zharyq-dark text-sm outline-none focus:border-zharyq-teal transition"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-zharyq-dark">Пароль</label>
+                <div className="relative">
+                  <input
+                    type={showRegPass ? 'text' : 'password'}
+                    value={regForm.password}
+                    onChange={e => setRegForm(f => ({ ...f, password: e.target.value }))}
+                    required
+                    autoComplete="new-password"
+                    placeholder="Минимум 6 символов"
+                    className="w-full px-3 py-2 pr-10 rounded-xl border border-zharyq-border bg-zharyq-bg text-zharyq-dark text-sm outline-none focus:border-zharyq-teal transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPass(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zharyq-gray hover:text-zharyq-dark transition"
+                  >
+                    {showRegPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+
+              {regForm.role === 'student' && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-zharyq-dark">Класс <span className="text-zharyq-gray font-normal">(необязательно)</span></label>
+                  <input
+                    value={regForm.class_name}
+                    onChange={e => setRegForm(f => ({ ...f, class_name: e.target.value }))}
+                    placeholder="Например: 10А"
+                    className="px-3 py-2 rounded-xl border border-zharyq-border bg-zharyq-bg text-zharyq-dark text-sm outline-none focus:border-zharyq-teal transition"
+                  />
+                </div>
+              )}
+
+              {regError && (
+                <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{regError}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={regLoading}
+                className="py-2.5 rounded-xl bg-zharyq-orange text-white font-semibold text-sm hover:bg-zharyq-orange-hover transition disabled:opacity-60"
+              >
+                {regLoading ? 'Создаём аккаунт...' : 'Зарегистрироваться'}
+              </button>
+            </form>
+
+            <p className="mt-4 text-center text-sm text-zharyq-gray">
+              Уже есть аккаунт?{' '}
+              <button type="button" onClick={openLogin} className="text-zharyq-teal font-medium hover:underline">
+                Войти
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

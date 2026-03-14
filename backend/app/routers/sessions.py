@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session as DBSession
 from typing import List
 
 from ..database import get_db
-from ..models import Session
+from ..models import TherapySession as Session
 from ..schemas import SessionCreate, SessionOut
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])

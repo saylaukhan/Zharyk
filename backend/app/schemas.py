@@ -4,10 +4,32 @@ from datetime import datetime
 from .models import UserRole, RiskLevel
 
 
-class UserBase(BaseModel):
-    anonymous_id: str
+class UserRegister(BaseModel):
+    username: str
+    email: str
+    password: str
     role: UserRole = UserRole.student
     class_name: Optional[str] = None
+
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    role: UserRole
+    user_id: int
+
+
+class UserBase(BaseModel):
+    username: str
+    email: str
+    role: UserRole
+    class_name: Optional[str] = None
+    anonymous_id: Optional[str] = None
 
 
 class UserCreate(UserBase):

@@ -1,0 +1,163 @@
+import enum
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, Enum
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+from .database import Base
+
+
+class UserRole(str, enum.Enum):
+    student = "student"
+    employee = "employee"
+    psychologist = "psychologist"
+    director = "director"
+
+
+class RiskLevel(str, enum.Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    role = Column(Enum(UserRole), default=UserRole.student, nullable=False)
+    anonymous_id = Column(String, unique=True, index=True, nullable=True)
+    class_name = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    checkins = relationship("CheckIn", back_populates="user")
+    metrics = relationship("UserMetric", back_populates="user")
+    alerts = relationship("Alert", back_populates="user", foreign_keys="Alert.user_id")
+    sessions = relationship("TherapySession", back_populates="user", foreign_keys="TherapySession.user_id")
+    notes = relationship("Note", back_populates="user", foreign_keys="Note.user_id")
+    course_progress = relationship("CourseProgress", back_populates="user")
+
+
+class CheckIn(Base):
+    __tablename__ = "checkins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    stress_level = Column(Float, nullable=True)
+    motivation_level = Column(Float, nullable=True)
+    anxiety_level = Column(Float, nullable=True)
+    burnout_level = Column(Float, nullable=True)
+    emotion_score = Column(Float, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="checkins")
+
+
+class UserMetric(Base):
+    __tablename__ = "user_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    stress = Column(Float, default=0)
+    burnout = Column(Float, default=0)
+    anxiety = Column(Float, default=0)
+    motivation = Column(Float, default=0)
+    emotion = Column(Float, default=0)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="metrics")
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    psychologist_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    alert_type = Column(String)
+    level = Column(Enum(RiskLevel))
+    message = Column(Text)
+    is_resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="alerts", foreign_keys=[user_id])
+
+
+class TherapySession(Base):
+    __tablename__ = "therapy_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    psychologist_id = Column(Integer, ForeignKey("users.id"))
+    title = Column(String)
+    notes = Column(Text, nullable=True)
+    scheduled_at = Column(DateTime(timezone=True))
+    duration_minutes = Column(Integer, default=50)
+    session_type = Column(String, default="individual")
+    is_completed = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="sessions", foreign_keys=[user_id])
+
+
+class Note(Base):
+    __tablename__ = "notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    psychologist_id = Column(Integer, ForeignKey("users.id"))
+    content = Column(Text)
+    tags = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="notes", foreign_keys=[user_id])
+
+
+class Course(Base):
+    __tablename__ = "courses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String, unique=True, index=True)
+    title = Column(String)
+    description = Column(Text)
+    category = Column(String)
+    content_type = Column(String)
+    duration_minutes = Column(Integer)
+    total_lessons = Column(Integer)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    progress = relationship("CourseProgress", back_populates="course")
+
+
+class CourseProgress(Base):
+    __tablename__ = "course_progress"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    course_id = Column(Integer, ForeignKey("courses.id"))
+    lessons_completed = Column(Integer, default=0)
+    is_completed = Column(Boolean, default=False)
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="course_progress")
+    course = relationship("Course", back_populates="progress")
+
+
+class OrgMetric(Base):
+    __tablename__ = "org_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    wellbeing_index = Column(Float)
+    critical_alerts_count = Column(Integer)
+    engagement_rate = Column(Float)
+    absence_reduction = Column(Float, nullable=True)
+    parent_engagement = Column(Float, nullable=True)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now())
