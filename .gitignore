@@ -43,3 +43,8 @@ frontend/build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Uploaded media (local video storage)
+backend/uploads/videos/
+!backend/uploads/.gitkeep
+!backend/uploads/videos/.gitkeep
