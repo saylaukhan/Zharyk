@@ -127,7 +127,7 @@ export default function DirectorDashboard() {
         </div>
       </header>
 
-      <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 space-y-4 text-zharyq-dark">
+      <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 space-y-4 text-zharyq-dark animate-fade-in-up">
         <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {KPI_CARDS.map((card, i) => (
             <article key={i} className={`rounded-2xl border border-zharyq-border bg-zharyq-bg p-5 ${card.span || ''}`}>

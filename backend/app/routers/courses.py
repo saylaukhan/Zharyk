@@ -10,7 +10,7 @@ from ..database import get_db
 from ..models import Course, CourseModule, TheoryModule, PracticeModule, CourseProgress, ModuleType, CourseStatus
 from ..schemas import (
     CourseCreate, CourseUpdate, CourseOut, CourseDetail,
-    CourseModuleCreate, CourseModuleOut,
+    CourseModuleCreate, CourseModuleOut, CourseModuleUpdate,
     TheoryModuleUpdate, TheoryModuleOut,
     PracticeModuleUpdate, PracticeModuleOut,
     CourseProgressCreate, CourseProgressOut,
@@ -64,12 +64,21 @@ def course_to_out(c: Course) -> dict:
 # ── Courses ───────────────────────────────────────────────────
 
 @router.get("/", response_model=List[CourseOut])
-def list_courses(category: str = None, db: Session = Depends(get_db)):
+def list_courses(category: str = None, show_all: bool = False, db: Session = Depends(get_db)):
     q = db.query(Course)
     if category:
         q = q.filter(Course.category == category)
+    if not show_all:
+        q = q.filter(Course.status == CourseStatus.published)
+
     courses = q.order_by(Course.created_at.desc()).all()
-    return [CourseOut.model_validate(course_to_out(c)) for c in courses]
+
+    out_list = []
+    for c in courses:
+        data = course_to_out(c)
+        data['duration'] = c.duration
+        out_list.append(CourseOut.model_validate(data))
+    return out_list
 
 
 @router.post("/", response_model=CourseDetail)
@@ -159,7 +168,12 @@ def add_module(course_id: int, payload: CourseModuleCreate, db: Session = Depend
         max_pos = max((m.position for m in course.modules), default=-1)
         position = max_pos + 1
 
-    module = CourseModule(course_id=course_id, position=position, module_type=payload.module_type)
+    module = CourseModule(
+        course_id=course_id,
+        position=position,
+        module_type=payload.module_type,
+        label=payload.label,
+    )
     db.add(module)
     db.flush()
 
@@ -168,6 +182,22 @@ def add_module(course_id: int, payload: CourseModuleCreate, db: Session = Depend
     else:
         db.add(PracticeModule(module_id=module.id))
 
+    db.commit()
+    db.refresh(module)
+    return CourseModuleOut.model_validate(module)
+
+
+@router.patch("/{course_id}/modules/{module_id}", response_model=CourseModuleOut)
+def update_module(course_id: int, module_id: int, payload: CourseModuleUpdate, db: Session = Depends(get_db)):
+    module = db.query(CourseModule).filter(
+        CourseModule.id == module_id,
+        CourseModule.course_id == course_id,
+    ).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+    data = payload.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        setattr(module, key, value)
     db.commit()
     db.refresh(module)
     return CourseModuleOut.model_validate(module)

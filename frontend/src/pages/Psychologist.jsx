@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Search, AlertTriangle, Activity, CheckCircle, X, Plus,
   ClipboardList, Clock, Layers, Zap, Brain, BatteryLow, 
-  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles
+  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles, Pencil, Trash2, BookOpen
 } from 'lucide-react'
 import { Radar } from 'react-chartjs-2'
 import {
@@ -33,8 +33,8 @@ function timeAgo(dateString) {
 }
 
 function levelMeta(level) {
-    case 'critical': return { label: 'Критический', color: 'text-red-500', bg: 'bg-red-50', dot: 'bg-red-500', class: 'text-red-600 bg-red-50 border-red-100' };
   switch (level) {
+    case 'critical': return { label: 'Критический', color: 'text-red-500', bg: 'bg-red-50', dot: 'bg-red-500', class: 'text-red-600 bg-red-50 border-red-100' };
     case 'medium': return { label: 'Средний', color: 'text-amber-500', bg: 'bg-amber-50', dot: 'bg-amber-500', class: 'text-amber-600 bg-amber-50 border-amber-100' };
     case 'high': return { label: 'Высокий', color: 'text-orange-500', bg: 'bg-orange-50', dot: 'bg-orange-500', class: 'text-orange-600 bg-orange-50 border-orange-100' };
     default: return { label: 'Низкий', color: 'text-zharyq-teal', bg: 'bg-zharyq-teal-light', dot: 'bg-zharyq-teal', class: 'text-zharyq-teal bg-zharyq-teal-light border-teal-100' };
@@ -47,25 +47,37 @@ function studentStatus(stress) {
   return { label: 'Норма', style: { background: 'var(--color-teal-light)', color: 'var(--color-teal)', border: '1px solid rgba(20,184,166,0.2)' }, class: '' };
 }
 
-  { id: 'psm25', title: 'Шкала психологического стресса (PSM-25)', desc: 'Оценка уровня стрессовой нагрузки.', duration: '5-7 мин', questions: 25, icon: Zap, color: 'text-zharyq-orange', bg: 'bg-orange-50' },
 const TESTS_LIB = [
+  { id: 'psm25', title: 'Шкала психологического стресса (PSM-25)', desc: 'Оценка уровня стрессовой нагрузки.', duration: '5-7 мин', questions: 25, icon: Zap, color: 'text-zharyq-orange', bg: 'bg-orange-50' },
   { id: 'mbi', title: 'Опросник выгорания (MBI)', desc: 'Диагностика профессионального и учебного выгорания.', duration: '10-15 мин', questions: 22, icon: BatteryLow, color: 'text-amber-500', bg: 'bg-amber-50' },
   { id: 'beck', title: 'Шкала тревожности Бека (BAI)', desc: 'Оценка выраженности тревожных симптомов.', duration: '10 мин', questions: 21, icon: Brain, color: 'text-violet-500', bg: 'bg-violet-50' },
   { id: 'smd', title: 'Опросник мотивации', desc: 'Оценка уровня учебной мотивации.', duration: '10 мин', questions: 20, icon: Activity, color: 'text-blue-500', bg: 'bg-blue-50' },
   { id: 'eq', title: 'Тест на эмоциональный интеллект', desc: 'Оценка эмоционального интеллекта по Холлу.', duration: '15 мин', questions: 30, icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-50' }
 ]
 
+const CATEGORIES = ['Стресс', 'Выгорание', 'Эмоции', 'Мотивация', 'Тревожность']
+const CONTENT_TYPES = ['Видео', 'Статья', 'Упражнение', 'Тест']
+const CATEGORY_STYLES = {
+  'Стресс': { tag: 'text-orange-600 bg-orange-50 border-orange-200' },
+  'Выгорание': { tag: 'text-amber-600 bg-amber-50 border-amber-200' },
+  'Тревожность': { tag: 'text-violet-600 bg-violet-50 border-violet-200' },
+  'Мотивация': { tag: 'text-blue-600 bg-blue-50 border-blue-200' },
+  'Эмоции': { tag: 'text-teal-600 bg-teal-50 border-teal-200' }
+}
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+
 const EMPTY_FORM = {
   title: '',
   description: '',
   category: 'Стресс',
   content_type: 'Видео',
+  duration_minutes: 30,
   total_lessons: 5,
   questions: '',
-  duration_minutes: 30,
 }
 
 export default function Psychologist() {
+  const navigate = useNavigate()
   const { isDark } = useTheme()
   const { user: authUser, logout } = useAuth()
   const [view, setView] = useState('alerts')
@@ -77,6 +89,14 @@ export default function Psychologist() {
   const [sessions, setSessions] = useState([])
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(true)
+
+  const [courses, setCourses] = useState([])
+  const [coursesLoading, setCoursesLoading] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingCourse, setEditingCourse] = useState(null)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
 
   useEffect(() => {
     Promise.all([
@@ -127,6 +147,7 @@ export default function Psychologist() {
     sessions: ['Сессии', 'Запланированные встречи'], 
     notes: ['Заметки', 'Клинические записи'], 
     tests: ['Тестирование', 'Управление методиками и тестирование'],
+    courses: ['Управление курсами', 'Создание и редактирование курсов'],
     settings: ['Настройки', 'Управление профилем']
   }
 
@@ -136,13 +157,14 @@ export default function Psychologist() {
     { id: 'sessions', icon: Calendar, label: 'Сессии' },
     { id: 'tests', icon: FileText, label: 'Тестирование' },
     { id: 'notes', icon: ClipboardList, label: 'Заметки' },
+    { id: 'courses', icon: BookOpen, label: 'Курсы' },
     { id: 'settings', icon: Settings, label: 'Настройки' },
   ]
 
   const fetchCourses = async () => {
     setCoursesLoading(true)
     try {
-      const res = await fetch(`${API}/courses/`)
+      const res = await fetch(`${API}/courses/?show_all=true`)
       const data = await res.json()
       setCourses(data)
     } catch (e) {
@@ -315,13 +337,22 @@ export default function Psychologist() {
             <p className="text-xs text-zharyq-gray mt-0.5">{titles[view]?.[1]}</p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
-              <input type="text" placeholder="Поиск…" className="border border-zharyq-border rounded-xl text-zharyq-dark pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52" />
-            </div>
-            <select className="border border-zharyq-border rounded-xl px-3 text-zharyq-dark py-2 text-sm bg-white focus:ring-0 cursor-pointer">
-              <option>Все классы</option>
-            </select>
+            {view !== 'courses' && (
+              <>
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
+                  <input type="text" placeholder="Поиск…" className="border border-zharyq-border rounded-xl text-zharyq-dark pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52" />
+                </div>
+                <select className="border border-zharyq-border rounded-xl px-3 text-zharyq-dark py-2 text-sm bg-white focus:ring-0 cursor-pointer">
+                  <option>Все классы</option>
+                </select>
+              </>
+            )}
+            {view === 'courses' && (
+              <button onClick={() => navigate('/course-builder')} className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-xl transition-colors" style={{ background: 'var(--color-accent)' }}>
+                <Plus size={16} /> Создать курс
+              </button>
+            )}
           </div>
         </header>
 
@@ -331,7 +362,7 @@ export default function Psychologist() {
           <>
             {/* ALERTS VIEW */}
             {view === 'alerts' && (
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-6 animate-fade-in-up">
                 <div className="max-w-4xl mx-auto">
                   <div className="grid grid-cols-3 gap-4 mb-6">
                     {[
@@ -402,7 +433,7 @@ export default function Psychologist() {
 
             {/* USERS VIEW */}
             {view === 'users' && (
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-6 animate-fade-in-up">
                 <div className="max-w-4xl mx-auto">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-zharyq-dark">
                     {students.map(u => {
@@ -446,7 +477,7 @@ export default function Psychologist() {
 
             {/* SESSIONS VIEW */}
             {view === 'sessions' && (
-              <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark">
+              <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark animate-fade-in-up">
                 <div className="max-w-3xl mx-auto">
                   <div className="border border-zharyq-border rounded-2xl overflow-hidden">
                     <div className="px-5 py-4 border-b border-zharyq-border">
@@ -480,7 +511,7 @@ export default function Psychologist() {
 
             {/* TESTS VIEW */}
             {view === 'tests' && (
-              <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark">
+              <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark animate-fade-in-up">
                 <div className="max-w-4xl mx-auto">
                   <div className="flex items-center justify-between mb-6">
                     <div className="relative flex-1 max-w-md">
@@ -519,7 +550,7 @@ export default function Psychologist() {
 
             {/* NOTES VIEW */}
             {view === 'notes' && (
-              <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark">
+              <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark animate-fade-in-up">
                 <div className="max-w-3xl mx-auto">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-sm font-semibold">Клинические заметки</h2>
@@ -550,7 +581,7 @@ export default function Psychologist() {
 
             {/* SETTINGS VIEW */}
             {view === 'settings' && (
-              <div className="flex-1 overflow-y-auto p-6 bg-zharyq-bg/30 text-zharyq-dark">
+              <div className="flex-1 overflow-y-auto p-6 bg-zharyq-bg/30 text-zharyq-dark animate-fade-in-up">
                 <div className="max-w-2xl mx-auto space-y-6">
                   <div className="bg-white border text-zharyq-dark border-zharyq-border rounded-2xl p-6">
                     <h3 className="text-sm font-semibold mb-4">Информация о профиле</h3>
@@ -601,7 +632,7 @@ export default function Psychologist() {
 
         {/* COURSES VIEW */}
         {view === 'courses' && (
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-6 animate-fade-in-up">
             <div className="max-w-4xl mx-auto">
               {coursesLoading ? (
                 <div className="flex items-center justify-center py-20 text-zharyq-gray text-sm">Загрузка...</div>
@@ -785,7 +816,6 @@ export default function Psychologist() {
                     className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
                   />
                 </div>
-                <span className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${studentStatus(selectedUser.stress).class}`} style={studentStatus(selectedUser.stress).style}>{studentStatus(selectedUser.stress).label}</span>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Вопросы курса</label>

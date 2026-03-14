@@ -1,22 +1,28 @@
-import { useState, useRef, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, BookOpen, Eye, Send, GripVertical, BookMarked,
   Dumbbell, Plus, Settings, Upload, ChevronDown, Wind,
   FileText, Link2, Sparkles, Bold, Italic,
-  Quote, Trash2
+  Quote, Trash2, CheckSquare, X
 } from 'lucide-react'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+
+function useDebounce(fn, delay) {
+  const timer = useRef(null)
+  return useCallback((...args) => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => fn(...args), delay)
+  }, [fn, delay])
+}
 
 const CATEGORIES = ['Стресс', 'Выгорание', 'Тревожность', 'Эмоции', 'Мотивация']
 
 const INITIAL_MODULES = [
   { id: 'settings', type: 'settings', label: 'Настройки курса' },
-  { id: 'theory-1', type: 'theory', label: 'Природа стресса: откуда он берётся?', index: 1 },
-  { id: 'practice-1', type: 'practice', label: 'Осознание триггеров', index: 1 },
-  { id: 'theory-2', type: 'theory', label: 'Физиология стресс-ответа', index: 2 },
-  { id: 'practice-2', type: 'practice', label: 'Дыхательная практика 4-7-8', index: 2 },
 ]
 
 function EmptyStateIllustration() {
@@ -38,12 +44,31 @@ function EmptyStateIllustration() {
   )
 }
 
-function CourseSettingsEditor() {
-  const [category, setCategory] = useState('Стресс')
-  const [description, setDescription] = useState('')
+function CourseSettingsEditor({ courseId, initialCategory, initialDescription, initialDuration, lessonsCount, courseType, onSave }) {
+  const [category, setCategory] = useState(initialCategory || 'Стресс')
+  const [description, setDescription] = useState(initialDescription || '')
+  const [duration, setDuration] = useState(initialDuration || 45)
+
+  const save = useCallback(async (cat, desc, dur) => {
+    if (!courseId) return
+    try {
+      await fetch(`${API}/courses/${courseId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: cat, description: desc, duration: dur }),
+      })
+      onSave?.({ category: cat, description: desc, duration: dur })
+    } catch (e) { console.error(e) }
+  }, [courseId])
+
+  const debouncedSave = useDebounce(save, 800)
+
+  const handleCategory = (val) => { setCategory(val); debouncedSave(val, description, duration) }
+  const handleDescription = (val) => { setDescription(val); debouncedSave(category, val, duration) }
+  const handleDuration = (val) => { setDuration(val); debouncedSave(category, description, val) }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto animate-fade-in-up">
       <div className="max-w-2xl mx-auto px-8 py-8">
         <h2 className="text-lg font-semibold text-zharyq-dark mb-1">Настройки курса</h2>
         <p className="text-sm text-zharyq-gray mb-8">Общая информация и обложка курса</p>
@@ -69,7 +94,7 @@ function CourseSettingsEditor() {
           <div className="relative">
             <select
               value={category}
-              onChange={e => setCategory(e.target.value)}
+              onChange={e => handleCategory(e.target.value)}
               className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange transition-all outline-none appearance-none pr-8"
               style={{ background: 'var(--color-bg)' }}
             >
@@ -83,7 +108,7 @@ function CourseSettingsEditor() {
           <label className="block text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Краткое описание</label>
           <textarea
             value={description}
-            onChange={e => setDescription(e.target.value)}
+            onChange={e => handleDescription(e.target.value)}
             placeholder="Что узнает и научится делать ученик после прохождения курса..."
             rows={5}
             className="w-full border border-zharyq-border rounded-xl px-3 py-3 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange transition-all outline-none resize-none leading-relaxed"
@@ -99,7 +124,8 @@ function CourseSettingsEditor() {
               <label className="block text-xs text-zharyq-gray mb-1.5">Время прохождения (мин)</label>
               <input
                 type="number"
-                defaultValue={45}
+                value={duration}
+                onChange={e => handleDuration(Number(e.target.value))}
                 className="w-full border border-zharyq-border rounded-lg px-3 py-2 text-sm focus:border-zharyq-orange transition-all outline-none"
                 style={{ background: 'var(--color-bg)', color: 'var(--color-text-primary)' }}
               />
@@ -107,10 +133,21 @@ function CourseSettingsEditor() {
             <div>
               <label className="block text-xs text-zharyq-gray mb-1.5">Количество уроков</label>
               <input
-                type="number"
-                defaultValue={4}
-                className="w-full border border-zharyq-border rounded-lg px-3 py-2 text-sm focus:border-zharyq-orange transition-all outline-none"
-                style={{ background: 'var(--color-bg)', color: 'var(--color-text-primary)' }}
+                type="text"
+                value={lessonsCount ?? '-'}
+                readOnly
+                className="w-full border border-zharyq-border rounded-lg px-3 py-2 text-sm outline-none opacity-80 cursor-not-allowed"
+                style={{ background: 'var(--color-surface)', color: 'var(--color-text-secondary)' }}
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs text-zharyq-gray mb-1.5">Тип курса</label>
+              <input
+                type="text"
+                value={courseType || 'Не определен'}
+                readOnly
+                className="w-full border border-zharyq-border rounded-lg px-3 py-2 text-sm outline-none opacity-80 cursor-not-allowed"
+                style={{ background: 'var(--color-surface)', color: 'var(--color-text-secondary)' }}
               />
             </div>
           </div>
@@ -120,15 +157,36 @@ function CourseSettingsEditor() {
   )
 }
 
-function TheoryModuleEditor({ module }) {
-  const [videoUrl, setVideoUrl] = useState('')
-  const [lessonTitle, setLessonTitle] = useState(module.label)
+function TheoryModuleEditor({ module, courseId, moduleDbId }) {
+  const [videoUrl, setVideoUrl] = useState(module.theory?.video_url || '')
+  const [lessonTitle, setLessonTitle] = useState(module.theory?.lesson_title || module.label || '')
   const [showVideoInput, setShowVideoInput] = useState(false)
   const [urlFocused, setUrlFocused] = useState(false)
   const [showFormatBar, setShowFormatBar] = useState(false)
   const [formatBarPos, setFormatBarPos] = useState({ top: 0, left: 0 })
+  const articleRef = useRef(null)
 
   const editorWrapRef = useRef(null)
+
+  const saveTheory = useCallback(async (payload) => {
+    if (!courseId || !moduleDbId) return
+    try {
+      await fetch(`${API}/courses/${courseId}/modules/${moduleDbId}/theory`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+    } catch (e) { console.error(e) }
+  }, [courseId, moduleDbId])
+
+  const debouncedSave = useDebounce(saveTheory, 800)
+
+  const handleVideoUrl = (val) => { setVideoUrl(val); debouncedSave({ video_url: val }) }
+  const handleTitle = (val) => { setLessonTitle(val); debouncedSave({ lesson_title: val }) }
+  const handleArticle = () => {
+    const content = articleRef.current?.innerHTML || ''
+    debouncedSave({ article_content: content })
+  }
 
   const handleEditorMouseUp = useCallback(() => {
     setTimeout(() => {
@@ -164,8 +222,9 @@ function TheoryModuleEditor({ module }) {
 
   const embedUrl = videoUrl ? getEmbedUrl(videoUrl) : null
 
+
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto animate-fade-in-up">
       <div className="max-w-[700px] mx-auto px-6 py-8 pb-16">
 
         {/* VIDEO BLOCK */}
@@ -201,7 +260,7 @@ function TheoryModuleEditor({ module }) {
                     autoFocus
                     type="text"
                     value={videoUrl}
-                    onChange={e => setVideoUrl(e.target.value)}
+                    onChange={e => handleVideoUrl(e.target.value)}
                     onFocus={() => setUrlFocused(true)}
                     onBlur={() => { setUrlFocused(false); if (!videoUrl) setShowVideoInput(false) }}
                     placeholder="Вставьте ссылку на YouTube или Vimeo"
@@ -238,7 +297,7 @@ function TheoryModuleEditor({ module }) {
         <input
           type="text"
           value={lessonTitle}
-          onChange={e => setLessonTitle(e.target.value)}
+          onChange={e => handleTitle(e.target.value)}
           placeholder="Название урока"
           className="w-full bg-transparent border-none outline-none mb-7 pb-5 border-b border-zharyq-border"
           style={{
@@ -293,11 +352,14 @@ function TheoryModuleEditor({ module }) {
           )}
 
           <div
+            ref={articleRef}
             contentEditable
             suppressContentEditableWarning
             onMouseUp={handleEditorMouseUp}
             onKeyDown={hideFormatBar}
-            onBlur={hideFormatBar}
+            onInput={handleArticle}
+            onBlur={() => { hideFormatBar(); handleArticle() }}
+            dangerouslySetInnerHTML={{ __html: module.theory?.article_content || '' }}
             className="outline-none"
             data-placeholder="Начните писать конспект к уроку..."
             style={{
@@ -336,23 +398,63 @@ function TheoryModuleEditor({ module }) {
   )
 }
 
-function PracticeModuleEditor({ module }) {
-  const [practiceType, setPracticeType] = useState('essay')
-  const [prompt, setPrompt] = useState('')
-  const [aiEnabled, setAiEnabled] = useState(false)
-  const [breathDuration, setBreathDuration] = useState(5)
+function PracticeModuleEditor({ module, courseId, moduleDbId }) {
+  const savedPractice = module.practice || {}
+  const [practiceType, setPracticeType] = useState(savedPractice.practice_type || 'essay')
+  const [prompt, setPrompt] = useState(savedPractice.prompt || '')
+  const [aiEnabled, setAiEnabled] = useState(savedPractice.ai_enabled || false)
+  const [breathDuration, setBreathDuration] = useState(savedPractice.breath_duration_minutes || 5)
+  const [quizQuestion, setQuizQuestion] = useState(savedPractice.quiz_question || '')
+  const [quizOptions, setQuizOptions] = useState(() => {
+    try { return JSON.parse(savedPractice.quiz_options || 'null') || ['', '', '', ''] } catch { return ['', '', '', ''] }
+  })
+  const [correctIndex, setCorrectIndex] = useState(savedPractice.quiz_correct_index ?? 0)
+
+  const savePractice = useCallback(async (payload) => {
+    if (!courseId || !moduleDbId) return
+    try {
+      await fetch(`${API}/courses/${courseId}/modules/${moduleDbId}/practice`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+    } catch (e) { console.error(e) }
+  }, [courseId, moduleDbId])
+
+  const debouncedSave = useDebounce(savePractice, 800)
+
+  const handleType = (val) => { setPracticeType(val); debouncedSave({ practice_type: val }) }
+  const handlePrompt = (val) => { setPrompt(val); debouncedSave({ prompt: val }) }
+  const handleAi = (val) => { setAiEnabled(val); debouncedSave({ ai_enabled: val }) }
+  const handleBreath = (val) => { setBreathDuration(val); debouncedSave({ breath_duration_minutes: val }) }
+  const handleQuizQuestion = (val) => { setQuizQuestion(val); debouncedSave({ quiz_question: val }) }
+  const handleOptions = (opts, ci = correctIndex) => {
+    setQuizOptions(opts)
+    debouncedSave({ quiz_options: JSON.stringify(opts), quiz_correct_index: ci })
+  }
+
+  const addOption = () => handleOptions([...quizOptions, ''])
+  const removeOption = (i) => {
+    const next = quizOptions.filter((_, idx) => idx !== i)
+    const newCi = correctIndex >= next.length ? 0 : correctIndex
+    setCorrectIndex(newCi)
+    handleOptions(next, newCi)
+  }
+  const updateOption = (i, val) => handleOptions(quizOptions.map((o, idx) => idx === i ? val : o))
+  const setCorrect = (i) => { setCorrectIndex(i); debouncedSave({ quiz_correct_index: i }) }
+
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto animate-fade-in-up">
       <div className="max-w-2xl mx-auto px-8 py-8">
         <h2 className="text-lg font-semibold text-zharyq-dark mb-1">{module.label}</h2>
         <p className="text-sm text-zharyq-gray mb-8">Модуль практики · Настройте тип задания</p>
 
         <div className="mb-6">
           <label className="block text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Тип задания</label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <button
-              onClick={() => setPracticeType('essay')}
+              onClick={() => handleType('essay')}
               className="flex items-start gap-3 p-4 rounded-xl border transition-all text-left"
               style={{
                 borderColor: practiceType === 'essay' ? 'var(--color-accent)' : 'var(--color-border)',
@@ -368,7 +470,7 @@ function PracticeModuleEditor({ module }) {
               </div>
             </button>
             <button
-              onClick={() => setPracticeType('breathing')}
+              onClick={() => handleType('breathing')}
               className="flex items-start gap-3 p-4 rounded-xl border transition-all text-left"
               style={{
                 borderColor: practiceType === 'breathing' ? 'var(--color-accent)' : 'var(--color-border)',
@@ -383,6 +485,22 @@ function PracticeModuleEditor({ module }) {
                 <p className="text-xs text-zharyq-gray mt-0.5">Встроенный виджет упражнений</p>
               </div>
             </button>
+            <button
+              onClick={() => handleType('quiz')}
+              className="flex items-start gap-3 p-4 rounded-xl border transition-all text-left"
+              style={{
+                borderColor: practiceType === 'quiz' ? 'var(--color-accent)' : 'var(--color-border)',
+                background: practiceType === 'quiz' ? 'var(--color-accent-light)' : 'var(--color-bg)',
+              }}
+            >
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--color-surface)' }}>
+                <CheckSquare size={15} strokeWidth={1.5} className="text-zharyq-gray" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-zharyq-dark">Тестовый вопрос</p>
+                <p className="text-xs text-zharyq-gray mt-0.5">Варианты с одним правильным</p>
+              </div>
+            </button>
           </div>
         </div>
 
@@ -393,7 +511,7 @@ function PracticeModuleEditor({ module }) {
               <label className="block text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Вопрос или задание</label>
               <textarea
                 value={prompt}
-                onChange={e => setPrompt(e.target.value)}
+                onChange={e => handlePrompt(e.target.value)}
                 placeholder="Опишите ситуацию, в которой вы недавно испытали стресс. Что произошло? Как вы себя чувствовали физически и эмоционально?"
                 rows={5}
                 className="w-full border border-zharyq-border rounded-xl px-3 py-3 text-sm leading-relaxed focus:border-zharyq-orange transition-all outline-none resize-none"
@@ -407,7 +525,7 @@ function PracticeModuleEditor({ module }) {
                 borderColor: aiEnabled ? 'var(--color-accent)' : 'var(--color-border)',
                 background: aiEnabled ? 'var(--color-accent-light)' : 'var(--color-surface)',
               }}
-              onClick={() => setAiEnabled(v => !v)}
+              onClick={() => handleAi(!aiEnabled)}
             >
               <div className="flex items-center gap-3">
                 <div
@@ -439,7 +557,7 @@ function PracticeModuleEditor({ module }) {
               )}
             </div>
           </>
-        ) : (
+        ) : practiceType === 'breathing' ? (
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Продолжительность (минуты)</label>
@@ -449,7 +567,7 @@ function PracticeModuleEditor({ module }) {
                   min={1}
                   max={20}
                   value={breathDuration}
-                  onChange={e => setBreathDuration(Number(e.target.value))}
+                  onChange={e => handleBreath(Number(e.target.value))}
                   className="flex-1 accent-zharyq-orange"
                 />
                 <span className="text-2xl font-semibold text-zharyq-dark w-12 text-right">{breathDuration}</span>
@@ -474,6 +592,93 @@ function PracticeModuleEditor({ module }) {
               </div>
             </div>
           </div>
+        ) : (
+          /* QUIZ TYPE */
+          <div className="space-y-6">
+            <div>
+              <label className="block text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Вопрос</label>
+              <textarea
+                value={quizQuestion}
+                onChange={e => handleQuizQuestion(e.target.value)}
+                placeholder="Введите вопрос для учащегося..."
+                rows={3}
+                className="w-full border border-zharyq-border rounded-xl px-3 py-3 text-sm leading-relaxed focus:border-zharyq-orange transition-all outline-none resize-none"
+                style={{ background: 'var(--color-bg)', color: 'var(--color-text-primary)' }}
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <label className="block text-xs font-semibold text-zharyq-gray uppercase tracking-wider">Варианты ответов</label>
+                <p className="text-[11px] text-zharyq-gray">Нажмите на кружок, чтобы отметить правильный</p>
+              </div>
+              <div className="flex flex-col gap-2">
+                {quizOptions.map((opt, i) => (
+                  <div key={i} className="flex items-center gap-2 group">
+                    <button
+                      onClick={() => setCorrect(i)}
+                      className="w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-all"
+                      style={{
+                        borderColor: correctIndex === i ? 'var(--color-teal)' : 'var(--color-border)',
+                        background: correctIndex === i ? 'var(--color-teal)' : 'transparent',
+                      }}
+                      title="Отметить как правильный"
+                    >
+                      {correctIndex === i && (
+                        <div className="w-2 h-2 rounded-full bg-white" />
+                      )}
+                    </button>
+                    <input
+                      type="text"
+                      value={opt}
+                      onChange={e => updateOption(i, e.target.value)}
+                      placeholder={`Вариант ${i + 1}`}
+                      className="flex-1 border border-zharyq-border rounded-lg px-3 py-2 text-sm outline-none transition-all"
+                      style={{
+                        background: 'var(--color-bg)',
+                        color: 'var(--color-text-primary)',
+                        borderColor: correctIndex === i ? 'var(--color-teal)' : 'var(--color-border)',
+                      }}
+                      onFocus={e => { if (correctIndex !== i) e.target.style.borderColor = 'var(--color-accent)' }}
+                      onBlur={e => { e.target.style.borderColor = correctIndex === i ? 'var(--color-teal)' : 'var(--color-border)' }}
+                    />
+                    {quizOptions.length > 2 && (
+                      <button
+                        onClick={() => removeOption(i)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-zharyq-gray hover:text-red-500 hover:bg-red-50 transition-all shrink-0"
+                        title="Удалить вариант"
+                      >
+                        <X size={13} strokeWidth={1.5} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {quizOptions.length < 6 && (
+                <button
+                  onClick={addOption}
+                  className="mt-3 flex items-center gap-1.5 text-xs text-zharyq-gray hover:text-zharyq-dark transition-colors px-2 py-1.5 rounded-lg hover:bg-gray-100"
+                >
+                  <Plus size={13} strokeWidth={1.5} />
+                  Добавить вариант
+                </button>
+              )}
+            </div>
+
+            <div className="p-4 rounded-xl border border-zharyq-border" style={{ background: 'var(--color-surface)' }}>
+              <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2">Правильный ответ</p>
+              {quizOptions[correctIndex]?.trim() ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--color-teal)' }}>
+                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                  </div>
+                  <p className="text-sm text-zharyq-dark font-medium">{quizOptions[correctIndex]}</p>
+                </div>
+              ) : (
+                <p className="text-sm text-zharyq-gray italic">Введите текст варианта и отметьте его правильным</p>
+              )}
+            </div>
+          </div>
         )}
         </div>
       </div>
@@ -483,7 +688,7 @@ function PracticeModuleEditor({ module }) {
 
 function EmptyEditor() {
   return (
-    <div className="h-full flex flex-col items-center justify-center text-zharyq-gray px-8">
+    <div className="h-full flex flex-col items-center justify-center text-zharyq-gray px-8 animate-fade-in-up">
       <EmptyStateIllustration />
       <p className="text-sm font-medium text-zharyq-dark mb-1.5 text-center">Выберите раздел для редактирования</p>
       <p className="text-sm text-center leading-relaxed max-w-xs">
@@ -496,64 +701,157 @@ function EmptyEditor() {
 export default function CourseBuilder() {
   const { isDark } = useTheme()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const editingId = searchParams.get('id') ? Number(searchParams.get('id')) : null
 
+  // Course-level state
+  const [courseId, setCourseId] = useState(null)
   const [courseTitle, setCourseTitleState] = useState('Новый курс')
+  const [courseStatus, setCourseStatus] = useState('draft')
   const [titleFocused, setTitleFocused] = useState(false)
-  const [modules, setModules] = useState(INITIAL_MODULES)
+  const [saving, setSaving] = useState(false)
+  const [saveLabel, setSaveLabel] = useState('')
+
+  // Module list (settings is a virtual local item, not in DB)
+  const SETTINGS_ITEM = { id: 'settings', type: 'settings', label: 'Настройки курса', dbId: null }
+  const [modules, setModules] = useState([SETTINGS_ITEM])
+  const [courseInitData, setCourseInitData] = useState(null) // category + description from DB
+
   const [selectedId, setSelectedId] = useState(null)
   const [draggedId, setDraggedId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
   const [publishConfirm, setPublishConfirm] = useState(false)
+  const [renamingId, setRenamingId] = useState(null)
+  const [renameValue, setRenameValue] = useState('')
 
   const selectedModule = modules.find(m => m.id === selectedId) || null
   const moduleToDelete = modules.find(m => m.id === deleteConfirmId) || null
 
-  const addTheory = () => {
-    const theoryCount = modules.filter(m => m.type === 'theory').length + 1
-    const newModule = {
-      id: `theory-${Date.now()}`,
-      type: 'theory',
-      label: `Теоретический урок ${theoryCount}`,
-      index: theoryCount,
+  // ── Init: create or load course ─────────────────────────────
+  useEffect(() => {
+    if (editingId) {
+      // Load existing
+      fetch(`${API}/courses/${editingId}`)
+        .then(r => r.json())
+        .then(data => {
+          setCourseId(data.id)
+          setCourseTitleState(data.title)
+          setCourseStatus(data.status)
+          setCourseInitData({ category: data.category, description: data.description, duration: data.duration })
+          const dbModules = (data.modules || []).map(m => ({
+            id: `${m.module_type}-${m.id}`,
+            type: m.module_type,
+            label: m.label || (m.module_type === 'theory' ? `Теоретический урок` : `Практическое задание`),
+            dbId: m.id,
+            theory: m.theory || null,
+            practice: m.practice || null,
+          }))
+          setModules([SETTINGS_ITEM, ...dbModules])
+          setSaveLabel('Загружен из базы')
+        })
+        .catch(console.error)
+    } else {
+      // Create new draft
+      fetch(`${API}/courses/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Новый курс', description: '', category: 'Стресс', duration: 45 }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          setCourseId(data.id)
+          setCourseStatus(data.status)
+          setSaveLabel('Черновик создан')
+        })
+        .catch(console.error)
     }
-    setModules(prev => [...prev, newModule])
-    setSelectedId(newModule.id)
+  }, [])
+
+  // ── Autosave title ──────────────────────────────────────────
+  const saveTitleFn = useCallback(async (title) => {
+    if (!courseId) return
+    setSaving(true)
+    try {
+      await fetch(`${API}/courses/${courseId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      })
+      const now = new Date()
+      setSaveLabel(`Сохранено в ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`)
+    } catch (e) { console.error(e) } finally { setSaving(false) }
+  }, [courseId])
+
+  const debouncedTitle = useDebounce(saveTitleFn, 800)
+  const handleTitle = (val) => { setCourseTitleState(val); debouncedTitle(val) }
+
+  // ── Add module ──────────────────────────────────────────────
+  const addModule = async (type) => {
+    if (!courseId) return
+    const label = type === 'theory'
+      ? `Теоретический урок ${modules.filter(m => m.type === 'theory').length + 1}`
+      : `Практическое задание ${modules.filter(m => m.type === 'practice').length + 1}`
+    try {
+      const res = await fetch(`${API}/courses/${courseId}/modules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ module_type: type, label }),
+      })
+      const data = await res.json()
+      const newMod = {
+        id: `${type}-${data.id}`,
+        type,
+        label: data.label || label,
+        dbId: data.id,
+        theory: data.theory || null,
+        practice: data.practice || null,
+      }
+      setModules(prev => [...prev, newMod])
+      setSelectedId(newMod.id)
+    } catch (e) { console.error(e) }
   }
 
-  const addPractice = () => {
-    const practiceCount = modules.filter(m => m.type === 'practice').length + 1
-    const newModule = {
-      id: `practice-${Date.now()}`,
-      type: 'practice',
-      label: `Практическое задание ${practiceCount}`,
-      index: practiceCount,
+  // ── Delete module ───────────────────────────────────────────
+  const deleteModule = async (id) => {
+    const mod = modules.find(m => m.id === id)
+    if (mod?.dbId && courseId) {
+      try {
+        await fetch(`${API}/courses/${courseId}/modules/${mod.dbId}`, { method: 'DELETE' })
+      } catch (e) { console.error(e) }
     }
-    setModules(prev => [...prev, newModule])
-    setSelectedId(newModule.id)
-  }
-
-  const deleteModule = (id) => {
     setModules(prev => prev.filter(m => m.id !== id))
     if (selectedId === id) setSelectedId(null)
     setDeleteConfirmId(null)
   }
 
-  const handleDragStart = (e, id) => {
-    setDraggedId(id)
-    e.dataTransfer.effectAllowed = 'move'
+  // ── Rename module ───────────────────────────────────────────
+  const startRename = (e, m) => { e.stopPropagation(); setRenamingId(m.id); setRenameValue(m.label) }
+  const commitRename = async (id) => {
+    const trimmed = renameValue.trim()
+    setRenamingId(null)
+    if (!trimmed) return
+    const mod = modules.find(m => m.id === id)
+    setModules(prev => prev.map(m => m.id === id ? { ...m, label: trimmed } : m))
+    if (mod?.dbId && courseId) {
+      try {
+        await fetch(`${API}/courses/${courseId}/modules/${mod.dbId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label: trimmed }),
+        })
+      } catch (e) { console.error(e) }
+    }
   }
 
-  const handleDragOver = (e, id) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (id !== draggedId) setDragOverId(id)
-  }
+  // ── Drag & drop reorder ─────────────────────────────────────
+  const handleDragStart = (e, id) => { setDraggedId(id); e.dataTransfer.effectAllowed = 'move' }
+  const handleDragOver = (e, id) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (id !== draggedId) setDragOverId(id) }
+  const handleDragEnd = () => { setDraggedId(null); setDragOverId(null) }
 
-  const handleDrop = (e, id) => {
+  const handleDrop = async (e, id) => {
     e.preventDefault()
     if (!draggedId || draggedId === id) return
-    const settings = modules.filter(m => m.type === 'settings')
     const rest = modules.filter(m => m.type !== 'settings')
     const fromIdx = rest.findIndex(m => m.id === draggedId)
     const toIdx = rest.findIndex(m => m.id === id)
@@ -561,23 +859,69 @@ export default function CourseBuilder() {
     const reordered = [...rest]
     const [removed] = reordered.splice(fromIdx, 1)
     reordered.splice(toIdx, 0, removed)
-    setModules([...settings, ...reordered])
+    const newList = [SETTINGS_ITEM, ...reordered]
+    setModules(newList)
     setDraggedId(null)
     setDragOverId(null)
+    if (courseId) {
+      const order = reordered.filter(m => m.dbId).map(m => m.dbId)
+      try {
+        await fetch(`${API}/courses/${courseId}/modules/reorder`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(order),
+        })
+      } catch (e) { console.error(e) }
+    }
   }
 
-  const handleDragEnd = () => {
-    setDraggedId(null)
-    setDragOverId(null)
+  // ── Publish / Draft ─────────────────────────────────────────
+  const doPublish = async () => {
+    if (!courseId) return
+    try {
+      await fetch(`${API}/courses/${courseId}/publish`, { method: 'PATCH' })
+      setCourseStatus('published')
+      setSaveLabel('Опубликован')
+    } catch (e) { console.error(e) }
+    setPublishConfirm(false)
   }
 
+  const doDraft = async () => {
+    if (!courseId) return
+    try {
+      await fetch(`${API}/courses/${courseId}/draft`, { method: 'PATCH' })
+      setCourseStatus('draft')
+      setSaveLabel('Черновик')
+    } catch (e) { console.error(e) }
+  }
+
+  // ── Render editor ───────────────────────────────────────────
   const renderEditor = () => {
     if (!selectedModule) return <EmptyEditor />
-    if (selectedModule.type === 'settings') return <CourseSettingsEditor />
-    if (selectedModule.type === 'theory') return <TheoryModuleEditor key={selectedModule.id} module={selectedModule} />
-    if (selectedModule.type === 'practice') return <PracticeModuleEditor key={selectedModule.id} module={selectedModule} />
+    
+    // Compute dynamic meta-info fields
+    const lessonsCount = modules.filter(m => m.type !== 'settings').length;
+    const hasVideo = modules.some(m => m.type === 'theory' && m.theory?.video_url);
+    const hasText = modules.some(m => m.type === 'theory' && m.theory?.article_content && m.theory.article_content !== '<p><br></p>');
+    const courseType = hasVideo && hasText ? 'Смешанный' : hasVideo ? 'Видео' : hasText ? 'Статья' : 'Не определен';
+
+    if (selectedModule.type === 'settings') return (
+      <CourseSettingsEditor
+        key={courseId}
+        courseId={courseId}
+        initialCategory={courseInitData?.category}
+        initialDescription={courseInitData?.description}
+        initialDuration={courseInitData?.duration}
+        lessonsCount={lessonsCount}
+        courseType={courseType}
+      />
+    )
+    if (selectedModule.type === 'theory') return <TheoryModuleEditor key={selectedModule.id} module={selectedModule} courseId={courseId} moduleDbId={selectedModule.dbId} />
+    if (selectedModule.type === 'practice') return <PracticeModuleEditor key={selectedModule.id} module={selectedModule} courseId={courseId} moduleDbId={selectedModule.dbId} />
     return <EmptyEditor />
   }
+
+  const isPublished = courseStatus === 'published'
 
   return (
     <div
@@ -602,7 +946,7 @@ export default function CourseBuilder() {
         <input
           type="text"
           value={courseTitle}
-          onChange={e => setCourseTitleState(e.target.value)}
+          onChange={e => handleTitle(e.target.value)}
           onFocus={() => setTitleFocused(true)}
           onBlur={() => setTitleFocused(false)}
           className="text-sm font-semibold bg-transparent rounded-lg px-2 py-1.5 transition-all outline-none min-w-[180px]"
@@ -613,7 +957,7 @@ export default function CourseBuilder() {
         />
 
         <div className="flex-1 flex justify-center">
-          <span className="text-xs text-zharyq-gray">Сохранено в черновики в 14:05</span>
+          <span className="text-xs text-zharyq-gray">{saving ? 'Сохранение...' : saveLabel}</span>
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
@@ -625,23 +969,27 @@ export default function CourseBuilder() {
             <Eye size={14} strokeWidth={1.5} />
             Предпросмотр
           </button>
-          <button
-            className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-100"
-            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
-          >
-            <BookOpen size={14} strokeWidth={1.5} />
-            Черновик
-          </button>
-          <button
-            onClick={() => setPublishConfirm(true)}
-            className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg text-white transition-colors"
-            style={{ background: 'var(--color-accent)' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--color-accent-hover)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'var(--color-accent)'}
-          >
-            <Send size={14} strokeWidth={1.5} />
-            Опубликовать
-          </button>
+          {isPublished ? (
+            <button
+              onClick={doDraft}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-100"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
+            >
+              <BookOpen size={14} strokeWidth={1.5} />
+              В черновик
+            </button>
+          ) : (
+            <button
+              onClick={() => setPublishConfirm(true)}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg text-white transition-colors"
+              style={{ background: 'var(--color-accent)' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--color-accent-hover)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--color-accent)'}
+            >
+              <Send size={14} strokeWidth={1.5} />
+              Опубликовать
+            </button>
+          )}
         </div>
       </header>
 
@@ -727,16 +1075,38 @@ export default function CourseBuilder() {
                     style={{ color: selectedId === m.id ? 'var(--color-accent)' : 'var(--color-teal)', flexShrink: 0 }}
                   />
                 )}
-                <div className="flex-1 min-w-0">
-                  <p
-                    className="text-sm truncate"
-                    style={{
-                      color: selectedId === m.id ? 'var(--color-accent)' : 'var(--color-text-primary)',
-                      fontWeight: selectedId === m.id ? 500 : 400,
-                    }}
-                  >
-                    {m.label}
-                  </p>
+                <div className="flex-1 min-w-0" onDoubleClick={e => startRename(e, m)}>
+                  {renamingId === m.id ? (
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onBlur={() => commitRename(m.id)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { e.preventDefault(); commitRename(m.id) }
+                        if (e.key === 'Escape') { setRenamingId(null) }
+                      }}
+                      onClick={e => e.stopPropagation()}
+                      className="w-full text-sm rounded px-1 outline-none"
+                      style={{
+                        background: 'var(--color-bg)',
+                        border: '1px solid var(--color-accent)',
+                        color: 'var(--color-text-primary)',
+                        caretColor: 'var(--color-accent)',
+                      }}
+                    />
+                  ) : (
+                    <p
+                      className="text-sm truncate"
+                      style={{
+                        color: selectedId === m.id ? 'var(--color-accent)' : 'var(--color-text-primary)',
+                        fontWeight: selectedId === m.id ? 500 : 400,
+                      }}
+                      title="Двойной клик для переименования"
+                    >
+                      {m.label}
+                    </p>
+                  )}
                   <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>
                     {m.type === 'theory' ? '📚 Теория' : '🧘 Практика'}
                   </p>
@@ -755,7 +1125,7 @@ export default function CourseBuilder() {
           {/* Bottom action buttons */}
           <div className="p-3 flex flex-col gap-2 shrink-0" style={{ borderTop: '1px solid var(--color-border)' }}>
             <button
-              onClick={addTheory}
+              onClick={() => addModule('theory')}
               className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm transition-colors hover:bg-gray-100 text-zharyq-gray hover:text-zharyq-dark"
             >
               <Plus size={15} strokeWidth={1.5} />
@@ -763,7 +1133,7 @@ export default function CourseBuilder() {
               <span>Добавить теорию</span>
             </button>
             <button
-              onClick={addPractice}
+              onClick={() => addModule('practice')}
               className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm transition-colors hover:bg-gray-100 text-zharyq-gray hover:text-zharyq-dark"
             >
               <Plus size={15} strokeWidth={1.5} />
@@ -860,7 +1230,7 @@ export default function CourseBuilder() {
                 Отмена
               </button>
               <button
-                onClick={() => setPublishConfirm(false)}
+                onClick={doPublish}
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors"
                 style={{ background: 'var(--color-accent)' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'var(--color-accent-hover)'}
@@ -875,3 +1245,4 @@ export default function CourseBuilder() {
     </div>
   )
 }
+

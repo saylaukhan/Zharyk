@@ -159,6 +159,9 @@ class PracticeModuleOut(BaseModel):
     prompt: Optional[str] = None
     ai_enabled: bool
     breath_duration_minutes: int
+    quiz_question: Optional[str] = None
+    quiz_options: Optional[str] = None
+    quiz_correct_index: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -169,6 +172,9 @@ class PracticeModuleUpdate(BaseModel):
     prompt: Optional[str] = None
     ai_enabled: Optional[bool] = None
     breath_duration_minutes: Optional[int] = None
+    quiz_question: Optional[str] = None
+    quiz_options: Optional[str] = None
+    quiz_correct_index: Optional[int] = None
 
 
 class CourseModuleOut(BaseModel):
@@ -176,6 +182,7 @@ class CourseModuleOut(BaseModel):
     course_id: int
     position: int
     module_type: ModuleType
+    label: Optional[str] = None
     theory: Optional[TheoryModuleOut] = None
     practice: Optional[PracticeModuleOut] = None
 
@@ -185,6 +192,12 @@ class CourseModuleOut(BaseModel):
 
 class CourseModuleCreate(BaseModel):
     module_type: ModuleType
+    position: Optional[int] = None
+    label: Optional[str] = None
+
+
+class CourseModuleUpdate(BaseModel):
+    label: Optional[str] = None
     position: Optional[int] = None
 
 
@@ -202,6 +215,7 @@ class CourseUpdate(BaseModel):
     category: Optional[str] = None
     cover_image_url: Optional[str] = None
     status: Optional[CourseStatus] = None
+    duration: Optional[int] = None
 
 
 class CourseOut(BaseModel):
@@ -215,6 +229,9 @@ class CourseOut(BaseModel):
     created_by_id: Optional[int] = None
     created_at: datetime
     module_count: int = 0
+    duration: int = 0
+    lessons_count: int = 0
+    course_type: str = "Не определен"
 
     class Config:
         from_attributes = True
@@ -231,6 +248,9 @@ class CourseDetail(BaseModel):
     created_by_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    duration: int = 0
+    lessons_count: int = 0
+    course_type: str = "Не определен"
     modules: List[CourseModuleOut] = []
 
     class Config:

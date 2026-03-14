@@ -15,12 +15,11 @@ import {
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
-import { useAuth } from '../context/AuthContext'
 import { fetchUserMetrics } from '../api/api'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend, RadialLinearScale)
 
-const API = 'http://localhost:8000/api/v1'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
 const CATEGORY_META = {
   'Стресс': { icon: Zap, iconColor: 'text-zharyq-orange', bg: 'bg-orange-50', tagColor: 'text-zharyq-orange', progressColor: 'bg-zharyq-teal' },
@@ -34,12 +33,6 @@ const DEFAULT_META = { icon: BookOpen, iconColor: 'text-zharyq-gray', bg: 'bg-gr
 
 const FILTERS = ['all', 'Стресс', 'Выгорание', 'Эмоции', 'Мотивация', 'Тревожность']
 const FILTER_LABELS = { all: 'Все', 'Стресс': 'Стресс', 'Выгорание': 'Выгорание', 'Эмоции': 'Эмоции', 'Мотивация': 'Мотивация', 'Тревожность': 'Тревожность' }
-
-const AVAILABLE_TESTS = [
-  { id: 'psm25', title: 'Уровень стресса (PSM-25)', desc: 'Оценка уровня психологического стресса.', duration: '5-7 мин', questions: 25, icon: Zap, color: 'text-zharyq-orange', bg: 'bg-orange-50' },
-  { id: 'beck', title: 'Шкала тревожности Бека', desc: 'Клиническая оценка уровня тревожности.', duration: '10 мин', questions: 21, icon: Brain, color: 'text-violet-500', bg: 'bg-violet-50' },
-  { id: 'burnout', title: 'Тест на выгорание (MBI)', desc: 'Анализ эмоционального истощения.', duration: '10-15 мин', questions: 22, icon: BatteryLow, color: 'text-amber-500', bg: 'bg-amber-50' },
-]
 
 const AVAILABLE_TESTS = [
   { id: 'psm25', title: 'Уровень стресса (PSM-25)', desc: 'Оценка уровня психологического стресса.', duration: '5-7 мин', questions: 25, icon: Zap, color: 'text-zharyq-orange', bg: 'bg-orange-50' },
@@ -63,6 +56,7 @@ function getChartColors(isDark) {
 }
 
 export default function StudentApp() {
+  const navigate = useNavigate()
   const { isDark } = useTheme()
   const { user: authUser, logout } = useAuth()
   const [view, setView] = useState('chat')
@@ -71,6 +65,9 @@ export default function StudentApp() {
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [metrics, setMetrics] = useState([])
+  const [apiCourses, setApiCourses] = useState([])
+  const [coursesLoading, setCoursesLoading] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
@@ -292,7 +289,7 @@ export default function StudentApp() {
         {/* CHAT VIEW */}
         {view === 'chat' && (
           <>
-            <div id="chat-container" className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col gap-6">
+            <div id="chat-container" className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col gap-6 animate-fade-in-up">
               {messages.length === 0 && (
                 <div className="mt-8 mb-4 text-center max-w-lg mx-auto w-full">
                   <h2 className="text-2xl font-semibold mb-2">Доброе утро, {authUser?.username || 'Студент'}</h2>
@@ -326,7 +323,7 @@ export default function StudentApp() {
                 <div ref={messagesEndRef} />
               </div>
             </div>
-            <div className="p-4 md:p-6 bg-white w-full max-w-3xl mx-auto">
+            <div className="p-4 md:p-6 bg-white w-full max-w-3xl mx-auto animate-fade-in-up" style={{ animationDelay: '50ms' }}>
               <div className="relative flex items-end gap-2 border border-zharyq-border rounded-2xl bg-white p-2 focus-within:border-zharyq-orange focus-within:ring-1 focus-within:ring-zharyq-orange transition-all">
                 <button className="p-2 text-zharyq-gray hover:text-zharyq-dark rounded-xl shrink-0"><Paperclip size={20} /></button>
                 <textarea
@@ -351,7 +348,7 @@ export default function StudentApp() {
 
         {/* TESTS VIEW */}
         {view === 'tests' && (
-          <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark">
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark animate-fade-in-up">
             <div className="max-w-3xl mx-auto">
               <div className="flex items-center gap-3 mb-8">
                 <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
@@ -412,7 +409,7 @@ export default function StudentApp() {
 
         {/* COURSES VIEW */}
         {view === 'courses' && (
-          <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark">
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark animate-fade-in-up">
             <div className="max-w-3xl mx-auto">
               <div className="flex items-center gap-3 mb-6">
                 <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
@@ -441,7 +438,7 @@ export default function StudentApp() {
                   const meta = CATEGORY_META[c.category] || DEFAULT_META
                   const IconComp = meta.icon
                   return (
-                    <div key={c.id} className="course-card border border-zharyq-border rounded-2xl overflow-hidden hover:border-zharyq-gray transition-colors cursor-pointer group">
+                    <div key={c.id} onClick={() => navigate(`/course/${c.id}`)} className="course-card border border-zharyq-border rounded-2xl overflow-hidden hover:border-zharyq-gray transition-colors cursor-pointer group">
                       <div className={`h-28 ${meta.bg} flex items-center justify-center relative`}>
                         <IconComp size={24} className={meta.iconColor} />
                         <span className={`absolute top-3 right-3 text-[10px] font-semibold ${meta.tagColor} bg-white border border-zharyq-border px-2 py-0.5 rounded-full`}>{c.category}</span>
@@ -469,7 +466,7 @@ export default function StudentApp() {
 
         {/* ANALYTICS VIEW */}
         {view === 'analytics' && (
-          <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark">
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark animate-fade-in-up">
             <div className="max-w-3xl mx-auto">
               <div className="flex items-center gap-3 mb-8">
                 <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>

@@ -33,6 +33,7 @@ class ModuleType(str, enum.Enum):
 class PracticeType(str, enum.Enum):
     essay = "essay"
     breathing = "breathing"
+    quiz = "quiz"
 
 
 class User(Base):
@@ -145,6 +146,7 @@ class Course(Base):
     cover_image_url = Column(String, nullable=True)
     status = Column(Enum(CourseStatus), default=CourseStatus.draft, nullable=False)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    duration = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 
@@ -156,6 +158,31 @@ class Course(Base):
     )
     progress = relationship("CourseProgress", back_populates="course", cascade="all, delete-orphan")
 
+    @property
+    def lessons_count(self) -> int:
+        return len(self.modules) if self.modules else 0
+
+    @property
+    def course_type(self) -> str:
+        if not self.modules:
+            return "Не определен"
+        has_video = False
+        has_text = False
+        for m in self.modules:
+            if m.module_type.value == "theory" and getattr(m, "theory", None):
+                if m.theory.video_url:
+                    has_video = True
+                if m.theory.article_content and str(m.theory.article_content).strip() and m.theory.article_content != "<p><br></p>":
+                    has_text = True
+        
+        if has_video and has_text:
+            return "Смешанный"
+        elif has_video:
+            return "Видео"
+        elif has_text:
+            return "Статья"
+        return "Не определен"
+
 
 class CourseModule(Base):
     __tablename__ = "course_modules"
@@ -164,6 +191,7 @@ class CourseModule(Base):
     course_id = Column(Integer, ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
     position = Column(Integer, default=0, nullable=False)
     module_type = Column(Enum(ModuleType), nullable=False)
+    label = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     course = relationship("Course", back_populates="modules")
@@ -202,6 +230,9 @@ class PracticeModule(Base):
     prompt = Column(Text, nullable=True)
     ai_enabled = Column(Boolean, default=False, nullable=False)
     breath_duration_minutes = Column(Integer, default=5, nullable=False)
+    quiz_question = Column(Text, nullable=True)
+    quiz_options = Column(Text, nullable=True)  # JSON array stored as string
+    quiz_correct_index = Column(Integer, nullable=True)
 
     module = relationship("CourseModule", back_populates="practice")
 

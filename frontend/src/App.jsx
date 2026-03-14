@@ -7,6 +7,8 @@ import StudentApp from './pages/StudentApp'
 import Psychologist from './pages/Psychologist'
 import DirectorDashboard from './pages/DirectorDashboard'
 import CourseBuilder from './pages/CourseBuilder'
+import CoursePass from './pages/CoursePass'
+
 
 export default function App() {
   return (
@@ -33,6 +35,16 @@ export default function App() {
             <Route path="/course-builder" element={
               <ProtectedRoute allowedRoles={['psychologist']}>
                 <CourseBuilder />
+              </ProtectedRoute>
+            } />
+            <Route path="/course/:id" element={
+              <ProtectedRoute allowedRoles={['student', 'employee']}>
+                <CoursePass />
+              </ProtectedRoute>
+            } />
+            <Route path="/course" element={
+              <ProtectedRoute allowedRoles={['student', 'employee']}>
+                <CoursePass />
               </ProtectedRoute>
             } />
             <Route path="*" element={<Navigate to="/" replace />} />
