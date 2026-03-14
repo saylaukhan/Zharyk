@@ -5,7 +5,7 @@ import {
   Bell, GraduationCap, Paperclip, Mic, ArrowUp, FileText, Camera,
   ArrowLeft, Search, Video, Clock, Layers, Headphones, Activity,
   Zap, BatteryLow, Heart, Rocket, Brain, SearchX, Flame, Sun,
-  BookOpenCheck, Trophy, BarChart, User, MessageCircle, LogOut
+  BookOpenCheck, Trophy, BarChart, User, MessageCircle, ClipboardList, LogOut
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { Line, Radar } from 'react-chartjs-2'
@@ -15,6 +15,8 @@ import {
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
+import { useAuth } from '../context/AuthContext'
+import { fetchUserMetrics } from '../api/api'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend, RadialLinearScale)
 
@@ -33,6 +35,18 @@ const DEFAULT_META = { icon: BookOpen, iconColor: 'text-zharyq-gray', bg: 'bg-gr
 const FILTERS = ['all', 'Стресс', 'Выгорание', 'Эмоции', 'Мотивация', 'Тревожность']
 const FILTER_LABELS = { all: 'Все', 'Стресс': 'Стресс', 'Выгорание': 'Выгорание', 'Эмоции': 'Эмоции', 'Мотивация': 'Мотивация', 'Тревожность': 'Тревожность' }
 
+const AVAILABLE_TESTS = [
+  { id: 'psm25', title: 'Уровень стресса (PSM-25)', desc: 'Оценка уровня психологического стресса.', duration: '5-7 мин', questions: 25, icon: Zap, color: 'text-zharyq-orange', bg: 'bg-orange-50' },
+  { id: 'beck', title: 'Шкала тревожности Бека', desc: 'Клиническая оценка уровня тревожности.', duration: '10 мин', questions: 21, icon: Brain, color: 'text-violet-500', bg: 'bg-violet-50' },
+  { id: 'burnout', title: 'Тест на выгорание (MBI)', desc: 'Анализ эмоционального истощения.', duration: '10-15 мин', questions: 22, icon: BatteryLow, color: 'text-amber-500', bg: 'bg-amber-50' },
+]
+
+const AVAILABLE_TESTS = [
+  { id: 'psm25', title: 'Уровень стресса (PSM-25)', desc: 'Оценка уровня психологического стресса.', duration: '5-7 мин', questions: 25, icon: Zap, color: 'text-zharyq-orange', bg: 'bg-orange-50' },
+  { id: 'beck', title: 'Шкала тревожности Бека', desc: 'Клиническая оценка уровня тревожности.', duration: '10 мин', questions: 21, icon: Brain, color: 'text-violet-500', bg: 'bg-violet-50' },
+  { id: 'burnout', title: 'Тест на выгорание (MBI)', desc: 'Анализ эмоционального истощения.', duration: '10-15 мин', questions: 22, icon: BatteryLow, color: 'text-amber-500', bg: 'bg-amber-50' },
+]
+
 const TEST_HISTORY = [
   { date: '13 мар 2025', test: 'Уровень стресса', result: 'Средний', resultClass: 'text-amber-600 bg-amber-50 border-amber-100', rec: 'Курс «Управление стрессом»' },
   { date: '10 мар 2025', test: 'Тест на выгорание', result: 'Норма', resultClass: 'text-green-700 bg-green-50 border-green-100', rec: 'Продолжайте отдыхать' },
@@ -50,18 +64,14 @@ function getChartColors(isDark) {
 
 export default function StudentApp() {
   const { isDark } = useTheme()
-  const { logout, user } = useAuth()
-  const navigate = useNavigate()
-  const displayName = user?.username || 'Пользователь'
-  const displayClass = user?.class_name || null
+  const { user: authUser, logout } = useAuth()
   const [view, setView] = useState('chat')
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
-  const [apiCourses, setApiCourses] = useState([])
-  const [coursesLoading, setCoursesLoading] = useState(false)
+  const [metrics, setMetrics] = useState([])
+  
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
   const accountMenuRef = useRef(null)
@@ -96,8 +106,17 @@ export default function StudentApp() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    if (authUser?.id) {
+      fetchUserMetrics(authUser.id)
+        .then(setMetrics)
+        .catch(console.error)
+    }
+  }, [authUser])
+
   const navItems = [
     { id: 'chat', icon: MessageSquare, label: 'AI-Ассистент' },
+    { id: 'tests', icon: ClipboardList, label: 'Тесты' },
     { id: 'courses', icon: BookOpen, label: 'База курсов' },
     { id: 'analytics', icon: BarChart2, label: 'Моя аналитика' },
   ]
@@ -135,13 +154,19 @@ export default function StudentApp() {
 
   const { text: chartText, grid: chartGrid } = getChartColors(isDark)
 
+  const sortedMetrics = [...metrics].reverse();
+  const lineLabels = sortedMetrics.length ? sortedMetrics.map(m => new Date(m.recorded_at).toLocaleDateString('ru-RU')) : ['Нет данных'];
+  const dataStress = sortedMetrics.length ? sortedMetrics.map(m => m.stress) : [0];
+  const dataMotivation = sortedMetrics.length ? sortedMetrics.map(m => m.motivation) : [0];
+
   const lineData = {
-    labels: ['1 мар', '5 мар', '10 мар', '13 мар', '15 мар', '18 мар', '20 мар'],
+    labels: lineLabels,
     datasets: [
-      { label: 'Стресс', data: [45, 52, 48, 61, 55, 58, 50], borderColor: '#FF7100', backgroundColor: 'rgba(255,113,0,0.1)', fill: true, tension: 0.35, pointRadius: 3, pointBorderWidth: 2, pointBackgroundColor: '#FFFFFF', pointBorderColor: '#FF7100' },
-      { label: 'Мотивация', data: [70, 65, 72, 68, 74, 76, 80], borderColor: '#14B8A6', backgroundColor: 'rgba(20,184,166,0.1)', fill: true, tension: 0.35, pointRadius: 3, pointBorderWidth: 2, pointBackgroundColor: '#FFFFFF', pointBorderColor: '#14B8A6' },
+      { label: 'Стресс', data: dataStress, borderColor: '#FF7100', backgroundColor: 'rgba(255,113,0,0.1)', fill: true, tension: 0.35, pointRadius: 3, pointBorderWidth: 2, pointBackgroundColor: '#FFFFFF', pointBorderColor: '#FF7100' },
+      { label: 'Мотивация', data: dataMotivation, borderColor: '#14B8A6', backgroundColor: 'rgba(20,184,166,0.1)', fill: true, tension: 0.35, pointRadius: 3, pointBorderWidth: 2, pointBackgroundColor: '#FFFFFF', pointBorderColor: '#14B8A6' },
     ]
   }
+
   const lineOptions = {
     responsive: true, maintainAspectRatio: false,
     plugins: { legend: { labels: { color: chartText, font: { size: 11 } } } },
@@ -151,11 +176,12 @@ export default function StudentApp() {
     }
   }
 
+  const latestMetric = sortedMetrics[sortedMetrics.length - 1] || { stress: 0, burnout: 0, anxiety: 0, motivation: 0, emotion: 0 };
   const radarData = {
     labels: ['Стресс', 'Выгорание', 'Тревожность', 'Мотивация', 'Эмоции'],
     datasets: [{
       label: 'Текущее состояние',
-      data: [40, 30, 50, 80, 70],
+      data: [latestMetric.stress, latestMetric.burnout, latestMetric.anxiety, latestMetric.motivation, latestMetric.emotion],
       backgroundColor: 'rgba(20,184,166,0.15)',
       borderColor: '#14B8A6',
       pointBackgroundColor: '#FFFFFF',
@@ -163,6 +189,7 @@ export default function StudentApp() {
       borderWidth: 2,
     }]
   }
+
   const radarOptions = {
     responsive: true, maintainAspectRatio: true,
     plugins: { legend: { display: false } },
@@ -182,16 +209,13 @@ export default function StudentApp() {
       {/* SIDEBAR */}
       <aside className="hidden md:flex flex-col w-1/5 min-w-[260px] max-w-[300px] bg-zharyq-bg border-r border-zharyq-border p-5 h-full">
         <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-2">
+          <Link to="/" className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-zharyq-orange flex items-center justify-center">
               <Sparkles size={12} className="text-white" />
             </div>
             <span className="font-semibold text-lg tracking-tight">Zharyq</span>
-          </div>
+          </Link>
           <div className="flex items-center gap-2.5">
-            <select className="bg-transparent text-sm text-zharyq-gray cursor-pointer border-none focus:ring-0 px-0">
-              <option>RU</option><option>KZ</option><option>EN</option>
-            </select>
             <ThemeToggle />
             <button className="relative text-zharyq-gray hover:text-zharyq-dark transition-colors">
               <Bell size={20} />
@@ -216,7 +240,6 @@ export default function StudentApp() {
             </button>
           ))}
           <a href="#" className="nav-item"><Info size={16} />О платформе</a>
-          <a href="#" className="nav-item"><Settings size={16} />Настройки</a>
         </div>
         <div className="flex-1 overflow-y-auto">
           <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">История</p>
@@ -226,47 +249,27 @@ export default function StudentApp() {
             ))}
           </div>
         </div>
-        <div className="pt-4 border-t border-zharyq-border mt-4 relative" ref={accountMenuRef}>
-          {accountMenuOpen && (
-            <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-zharyq-border rounded-xl overflow-hidden z-50">
-              <Link
-                to="/profile"
-                onClick={() => setAccountMenuOpen(false)}
-                className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-zharyq-dark hover:bg-zharyq-bg transition-colors"
-              >
-                <User size={15} className="text-zharyq-gray" />
-                Профиль
-              </Link>
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
-              >
-                <LogOut size={15} />
-                Выйти
-              </button>
+        <div className="pt-4 border-t border-zharyq-border mt-4 flex items-center gap-3">
+          <div className="w-8 h-8 bg-gradient-to-tr from-zharyq-teal to-blue-400 rounded-full flex justify-center items-center text-white font-bold text-xs relative">
+            {authUser?.username?.[0]?.toUpperCase() || 'S'}
+            <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
+              <div className="bg-orange-100 text-zharyq-orange text-[8px] font-bold px-1 rounded-full border border-orange-200">🔥 5</div>
             </div>
-          )}
-          <button
-            onClick={() => setAccountMenuOpen(o => !o)}
-            className="w-full flex items-center gap-3 rounded-xl hover:bg-zharyq-bg px-2 py-1.5 transition-colors"
-          >
-            <div className="w-8 h-8 bg-gradient-to-tr from-zharyq-teal to-blue-400 rounded-full relative shrink-0">
-              <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
-                <div className="bg-orange-100 text-zharyq-orange text-[8px] font-bold px-1 rounded-full border border-orange-200">🔥 5</div>
-              </div>
-            </div>
-            <div className="flex-1 min-w-0 text-left">
-              <p className="text-sm font-medium text-zharyq-dark truncate">{displayName}</p>
-              <p className="text-[10px] text-zharyq-gray truncate flex items-center gap-1">
-                <GraduationCap size={12} /> {displayClass || 'Ученик'}
-              </p>
-            </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-zharyq-dark truncate">{authUser?.username || 'Студент'}</p>
+            <p className="text-[10px] text-zharyq-gray truncate flex items-center gap-1">
+              <GraduationCap size={12} /> {authUser?.class_name || 'Не указан'}
+            </p>
+          </div>
+          <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title="Выйти">
+            <LogOut size={16} />
           </button>
         </div>
       </aside>
 
       {/* MAIN */}
-      <main className="flex-1 flex flex-col h-full bg-white relative pb-16 md:pb-0">
+      <main className="flex-1 flex flex-col h-full bg-white relative pb-16 md:pb-0 text-zharyq-dark">
         {/* Mobile header */}
         <header className="md:hidden border-b border-zharyq-border p-4 flex items-center justify-between bg-white z-10">
           <div className="flex items-center gap-2">
@@ -280,6 +283,9 @@ export default function StudentApp() {
             <div className="bg-zharyq-teal-light border border-teal-200 text-zharyq-teal text-xs font-medium px-3 py-1 rounded-full flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-zharyq-teal" />В норме
             </div>
+            <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title="Выйти">
+              <LogOut size={16} />
+            </button>
           </div>
         </header>
 
@@ -289,17 +295,17 @@ export default function StudentApp() {
             <div id="chat-container" className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col gap-6">
               {messages.length === 0 && (
                 <div className="mt-8 mb-4 text-center max-w-lg mx-auto w-full">
-                  <h2 className="text-2xl font-semibold mb-2">Доброе утро, {displayName}</h2>
-                  <p className="text-zharyq-gray mb-8">Как ваш настрой перед контрольной по физике?</p>
+                  <h2 className="text-2xl font-semibold mb-2">Доброе утро, {authUser?.username || 'Студент'}</h2>
+                  <p className="text-zharyq-gray mb-8">Как ваш настрой перед контрольной?</p>
                   <div className="flex flex-wrap justify-center gap-2">
-                    <button onClick={() => sendMessage('Хочу пройти тест на уровень стресса')} className="bg-white border border-zharyq-border hover:border-zharyq-orange text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 text-zharyq-dark shadow-sm">
+                    <button onClick={() => sendMessage('Хочу пройти тест на уровень стресса')} className="bg-white border text-zharyq-dark border-zharyq-border hover:border-zharyq-orange text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 shadow-sm">
                       <FileText size={16} className="text-zharyq-gray" />Оценить стресс
                     </button>
-                    <button onClick={() => sendMessage('Определи мои эмоции по камере')} className="bg-white border border-zharyq-border hover:border-zharyq-orange text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 text-zharyq-dark shadow-sm">
+                    <button onClick={() => sendMessage('Определи мои эмоции')} className="bg-white border text-zharyq-dark border-zharyq-border hover:border-zharyq-orange text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 shadow-sm">
                       <Camera size={16} className="text-zharyq-gray" />Скан по лицу
                     </button>
-                    <button onClick={() => sendMessage('Мне нужно просто выговориться')} className="bg-white border border-zharyq-border hover:border-zharyq-orange text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 text-zharyq-dark shadow-sm">
-                      <Mic size={16} className="text-zharyq-gray" />Выговориться
+                    <button onClick={() => sendMessage('Признаки выгорания, устал')} className="bg-white border text-zharyq-dark border-zharyq-border hover:border-zharyq-orange text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 shadow-sm">
+                      <Activity size={16} className="text-zharyq-gray" />Выгорание
                     </button>
                   </div>
                 </div>
@@ -330,7 +336,7 @@ export default function StudentApp() {
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Расскажите, как вы себя чувствуете..."
-                  className="w-full bg-transparent border-none focus:ring-0 resize-none py-2 text-sm max-h-32"
+                  className="w-full bg-transparent border-none text-zharyq-dark focus:ring-0 resize-none py-2 text-sm max-h-32"
                   style={{ minHeight: '40px' }}
                 />
                 <div className="flex items-center gap-1 shrink-0">
@@ -343,9 +349,70 @@ export default function StudentApp() {
           </>
         )}
 
+        {/* TESTS VIEW */}
+        {view === 'tests' && (
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark">
+            <div className="max-w-3xl mx-auto">
+              <div className="flex items-center gap-3 mb-8">
+                <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
+                <h1 className="text-xl font-semibold">Доступные тесты</h1>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                {AVAILABLE_TESTS.map(t => (
+                  <div key={t.id} className="border border-zharyq-border rounded-2xl p-5 hover:border-zharyq-gray transition-colors cursor-pointer group flex flex-col h-full">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className={`w-10 h-10 rounded-xl ${t.bg} flex items-center justify-center shrink-0`}>
+                        <t.icon size={20} className={t.color} />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">{t.title}</h4>
+                        <p className="text-xs text-zharyq-gray mt-1 leading-relaxed">{t.desc}</p>
+                      </div>
+                    </div>
+                    <div className="mt-auto flex items-center justify-between text-[11px] text-zharyq-gray border-t border-zharyq-border pt-3">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1"><Clock size={12} /> {t.duration}</span>
+                        <span className="flex items-center gap-1"><Layers size={12} /> {t.questions} вопросов</span>
+                      </div>
+                      <button className="text-zharyq-orange font-semibold hover:underline">Пройти</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border border-zharyq-border rounded-2xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-zharyq-border">
+                  <h2 className="text-sm font-semibold">История прохождений</h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-zharyq-border bg-zharyq-bg/50 text-zharyq-dark">
+                        {['Дата', 'Тест', 'Результат'].map(h => (
+                          <th key={h} className="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {TEST_HISTORY.map((row, i) => (
+                        <tr key={i} className="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
+                          <td className="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">{row.date}</td>
+                          <td className="px-5 py-3.5 font-medium text-xs">{row.test}</td>
+                          <td className="px-5 py-3.5"><span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${row.resultClass} border px-2 py-0.5 rounded-full`}>{row.result}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* COURSES VIEW */}
         {view === 'courses' && (
-          <div className="flex-1 overflow-y-auto p-6 md:p-8">
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark">
             <div className="max-w-3xl mx-auto">
               <div className="flex items-center gap-3 mb-6">
                 <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
@@ -353,7 +420,7 @@ export default function StudentApp() {
               </div>
               <div className="relative mb-4">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
-                <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию или теме..." className="w-full border border-zharyq-border rounded-xl pl-9 pr-4 py-2.5 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all" />
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию или теме..." className="w-full text-zharyq-dark border border-zharyq-border rounded-xl pl-9 pr-4 py-2.5 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all" />
               </div>
               <div className="flex flex-wrap gap-2 mb-8">
                 {FILTERS.map(f => (
@@ -402,16 +469,16 @@ export default function StudentApp() {
 
         {/* ANALYTICS VIEW */}
         {view === 'analytics' && (
-          <div className="flex-1 overflow-y-auto p-6 md:p-8">
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark">
             <div className="max-w-3xl mx-auto">
               <div className="flex items-center gap-3 mb-8">
                 <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
                 <div>
                   <h1 className="text-xl font-semibold">Моя аналитика</h1>
-                  <p className="text-xs text-zharyq-gray mt-0.5">Последние 30 дней</p>
+                  <p className="text-xs text-zharyq-gray mt-0.5">Личные показатели</p>
                 </div>
               </div>
-              <div className="border border-zharyq-border rounded-2xl p-5 mb-6">
+              <div className="border border-zharyq-border rounded-2xl p-5 mb-6 bg-zharyq-bg">
                 <div className="flex items-center justify-between mb-1">
                   <h2 className="text-sm font-semibold">Стресс и Мотивация</h2>
                   <div className="flex items-center gap-4 text-[11px] text-zharyq-gray">
@@ -419,12 +486,12 @@ export default function StudentApp() {
                     <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 rounded-full bg-zharyq-teal inline-block" />Мотивация</span>
                   </div>
                 </div>
-                <p className="text-xs text-zharyq-gray mb-4">Изменение показателей за последние 30 дней</p>
+                <p className="text-xs text-zharyq-gray mb-4">Изменение показателей за период</p>
                 <div style={{ height: '200px' }}>
                   <Line data={lineData} options={lineOptions} />
                 </div>
               </div>
-              <div className="border border-zharyq-border rounded-2xl p-5 mb-6">
+              <div className="border border-zharyq-border rounded-2xl p-5 mb-6 bg-zharyq-bg">
                 <h2 className="text-sm font-semibold mb-4">Достижения</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
@@ -433,7 +500,7 @@ export default function StudentApp() {
                     { icon: BookOpenCheck, bg: 'bg-blue-50', color: 'text-blue-500', title: 'Первый курс завершён', desc: '«Эмоциональный интеллект» пройден полностью.' },
                     { icon: Trophy, bg: 'bg-gray-100', color: 'text-zharyq-gray', title: 'Серия 30 дней', desc: 'Заходите каждый день в течение месяца.', locked: true },
                   ].map((a, i) => (
-                    <div key={i} className={`achievement-card flex items-start gap-3 border border-zharyq-border rounded-xl p-3 ${a.locked ? 'opacity-40' : ''}`}>
+                    <div key={i} className={`achievement-card flex items-start gap-3 border border-zharyq-border bg-white rounded-xl p-3 ${a.locked ? 'opacity-40' : ''}`}>
                       <div className={`w-10 h-10 rounded-xl ${a.bg} flex items-center justify-center shrink-0`}>
                         <a.icon size={20} className={a.color} />
                       </div>
@@ -443,32 +510,6 @@ export default function StudentApp() {
                       </div>
                     </div>
                   ))}
-                </div>
-              </div>
-              <div className="border border-zharyq-border rounded-2xl overflow-hidden mb-6">
-                <div className="p-5 border-b border-zharyq-border">
-                  <h2 className="text-sm font-semibold">История тестов</h2>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-zharyq-border">
-                        {['Дата', 'Тест', 'Результат', 'Рекомендация'].map(h => (
-                          <th key={h} className="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {TEST_HISTORY.map((row, i) => (
-                        <tr key={i} className={`${i < TEST_HISTORY.length - 1 ? 'border-b border-zharyq-border' : ''} hover:bg-zharyq-bg transition-colors`}>
-                          <td className="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">{row.date}</td>
-                          <td className="px-5 py-3.5 font-medium text-xs">{row.test}</td>
-                          <td className="px-5 py-3.5"><span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${row.resultClass} border px-2 py-0.5 rounded-full`}>{row.result}</span></td>
-                          <td className="px-5 py-3.5 text-xs text-zharyq-gray">{row.rec}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
               </div>
             </div>
@@ -481,11 +522,15 @@ export default function StudentApp() {
         <div className="bg-zharyq-teal-light border border-teal-200 rounded-xl p-4 mb-6 flex items-start gap-3">
           <span className="flex w-3 h-3 rounded-full bg-zharyq-teal mt-0.5 shrink-0" />
           <div>
-            <h3 className="text-sm font-semibold text-zharyq-teal mb-1">Состояние в норме</h3>
-            <p className="text-xs text-teal-700/80 leading-relaxed">Наблюдается лёгкое снижение мотивации по сравнению с прошлой неделей, но общий фон стабилен.</p>
+            <h3 className="text-sm font-semibold text-zharyq-teal mb-1">
+              Держитесь молодцом!
+            </h3>
+            <p className="text-xs text-teal-700/80 leading-relaxed">
+              Ваш профиль обновляется по мере чекинов. Продолжайте в том же духе.
+            </p>
           </div>
         </div>
-        <div className="mb-8">
+        <div className="mb-8 text-zharyq-dark">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold">Психологический профиль</h3>
             <span className="text-[10px] text-zharyq-gray uppercase bg-gray-100 px-2 py-1 rounded">Live</span>
@@ -494,7 +539,7 @@ export default function StudentApp() {
             <Radar data={radarData} options={radarOptions} />
           </div>
         </div>
-        <div>
+        <div className="text-zharyq-dark">
           <h3 className="text-sm font-semibold mb-4">Рекомендации для вас</h3>
           {[
             { icon: Zap, bg: 'bg-orange-50', color: 'text-zharyq-orange', title: 'Управление стрессом', sub: 'Видео • 5 минут', progress: 40 },
@@ -523,11 +568,11 @@ export default function StudentApp() {
       <nav className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-zharyq-border pt-2 pb-4 px-4 flex justify-between z-20">
         {[
           { id: 'chat', icon: MessageSquare, label: 'Чат' },
+          { id: 'tests', icon: ClipboardList, label: 'Тесты' },
           { id: 'analytics', icon: BarChart2, label: 'Аналитика' },
           { id: 'courses', icon: BookOpen, label: 'Курсы' },
-          { id: 'profile', icon: User, label: 'Профиль' },
         ].map(item => (
-          <button key={item.id} onClick={() => item.id !== 'profile' && setView(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${view === item.id ? 'text-zharyq-orange' : 'text-zharyq-gray'}`}>
+          <button key={item.id} onClick={() => setView(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${view === item.id ? 'text-zharyq-orange' : 'text-zharyq-gray'}`}>
             <item.icon size={20} />
             <span className="text-[10px] font-medium">{item.label}</span>
           </button>

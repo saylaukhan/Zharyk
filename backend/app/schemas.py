@@ -267,3 +267,36 @@ class OrgMetricOut(OrgMetricCreate):
 
     class Config:
         from_attributes = True
+
+
+class AlertRich(BaseModel):
+    id: int
+    user_id: int
+    anonymous_id: Optional[str] = None
+    class_name: Optional[str] = None
+    alert_type: str
+    level: RiskLevel
+    created_at: datetime
+    is_resolved: bool
+
+    class Config:
+        from_attributes = True
+
+
+class StudentMetrics(BaseModel):
+    id: int
+    username: str
+    email: str
+    role: UserRole
+    class_name: Optional[str] = None
+    anonymous_id: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+    stress: float = 0
+    motivation: float = 0
+    sessions_count: int = 0
+    courses_count: int = 0
+    last_checkin_date: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

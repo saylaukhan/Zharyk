@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
-  Sparkles, ShieldCheck, Bell, Users, Calendar, FileText, LogOut,
-  Search, AlertTriangle, Activity, CheckCircle, X, Plus, BookOpen,
-  Pencil, Trash2, Clock, Layers, Video
+  Search, AlertTriangle, Activity, CheckCircle, X, Plus,
+  ClipboardList, Clock, Layers, Zap, Brain, BatteryLow, 
+  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles
 } from 'lucide-react'
 import { Radar } from 'react-chartjs-2'
 import {
@@ -13,47 +13,46 @@ import {
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
+import { 
+  fetchAlertsRich, fetchStudentsWithMetrics, fetchSessions, fetchNotes 
+} from '../api/api'
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
 
-const API = 'http://localhost:8000/api/v1'
-
-const CATEGORIES = ['Стресс', 'Выгорание', 'Тревожность', 'Эмоции', 'Мотивация']
-const CONTENT_TYPES = ['Видео', 'Практика', 'Статья']
-
-const CATEGORY_STYLES = {
-  'Стресс': { tag: 'text-orange-600 bg-orange-50 border-orange-200' },
-  'Выгорание': { tag: 'text-amber-600 bg-amber-50 border-amber-200' },
-  'Тревожность': { tag: 'text-violet-600 bg-violet-50 border-violet-200' },
-  'Эмоции': { tag: 'text-teal-600 bg-teal-50 border-teal-200' },
-  'Мотивация': { tag: 'text-blue-600 bg-blue-50 border-blue-200' },
+// Helpers
+function timeAgo(dateString) {
+  if (!dateString) return '';
+  const diff = Date.now() - new Date(dateString).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 15) return 'Только что';
+  if (minutes < 60) return `${minutes} мин назад`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ч назад`;
+  const days = Math.floor(hours / 24);
+  return `${days} дн. назад`;
 }
 
-const ALERTS = [
-  { id: '12', anon: 'Аноним #12', class: '10А', type: 'Высокий стресс', level: 'Критический', time: 'Только что', levelClass: 'text-red-600 bg-red-50 border-red-100', dot: 'bg-red-500', avatarBg: 'bg-red-100', avatarColor: 'text-red-500' },
-  { id: '5', anon: 'Аноним #5', class: '11А', type: 'Признаки выгорания', level: 'Критический', time: '15 мин назад', levelClass: 'text-red-600 bg-red-50 border-red-100', dot: 'bg-red-500', avatarBg: 'bg-red-100', avatarColor: 'text-red-500' },
-  { id: '19', anon: 'Аноним #19', class: '10Б', type: 'Тревожность', level: 'Критический', time: '1 ч назад', levelClass: 'text-red-600 bg-red-50 border-red-100', dot: 'bg-red-500', avatarBg: 'bg-red-100', avatarColor: 'text-red-500' },
-  { id: '7', anon: 'Аноним #7', class: '10А', type: 'Снижение мотивации', level: 'Средний', time: '2 ч назад', levelClass: 'text-amber-600 bg-amber-50 border-amber-100', dot: 'bg-amber-500', avatarBg: 'bg-amber-100', avatarColor: 'text-amber-600' },
-  { id: '21', anon: 'Аноним #21', class: '11А', type: 'Эмоциональный спад', level: 'Средний', time: '3 ч назад', levelClass: 'text-amber-600 bg-amber-50 border-amber-100', dot: 'bg-amber-500', avatarBg: 'bg-amber-100', avatarColor: 'text-amber-600' },
-]
+function levelMeta(level) {
+    case 'critical': return { label: 'Критический', color: 'text-red-500', bg: 'bg-red-50', dot: 'bg-red-500', class: 'text-red-600 bg-red-50 border-red-100' };
+  switch (level) {
+    case 'medium': return { label: 'Средний', color: 'text-amber-500', bg: 'bg-amber-50', dot: 'bg-amber-500', class: 'text-amber-600 bg-amber-50 border-amber-100' };
+    case 'high': return { label: 'Высокий', color: 'text-orange-500', bg: 'bg-orange-50', dot: 'bg-orange-500', class: 'text-orange-600 bg-orange-50 border-orange-100' };
+    default: return { label: 'Низкий', color: 'text-zharyq-teal', bg: 'bg-zharyq-teal-light', dot: 'bg-zharyq-teal', class: 'text-zharyq-teal bg-zharyq-teal-light border-teal-100' };
+  }
+}
 
-const USERS = [
-  { id: '3', gradient: 'from-zharyq-teal to-blue-400', stress: 35, motivation: 78, status: 'Норма', statusStyle: { background: 'var(--color-teal-light)', color: 'var(--color-teal)', border: '1px solid rgba(20,184,166,0.2)' }, sessions: 12, courses: 4, lastSeen: 'сегодня' },
-  { id: '8', gradient: 'from-orange-300 to-red-400', stress: 72, motivation: 42, status: 'Риск', statusClass: 'bg-amber-50 text-amber-600 border border-amber-100', sessions: 5, courses: 1, lastSeen: 'вчера' },
-  { id: '14', gradient: 'from-violet-300 to-blue-400', stress: 28, motivation: 85, status: 'Норма', statusStyle: { background: 'var(--color-teal-light)', color: 'var(--color-teal)', border: '1px solid rgba(20,184,166,0.2)' }, sessions: 8, courses: 3, lastSeen: '3 дн. назад' },
-  { id: '2', gradient: 'from-green-300 to-teal-400', stress: 88, motivation: 25, status: 'Алерт', statusClass: 'bg-red-50 text-red-600 border border-red-100', sessions: 2, courses: 0, lastSeen: 'сегодня' },
-  { id: '17', gradient: 'from-blue-300 to-indigo-400', stress: 45, motivation: 65, status: 'Норма', statusStyle: { background: 'var(--color-teal-light)', color: 'var(--color-teal)', border: '1px solid rgba(20,184,166,0.2)' }, sessions: 7, courses: 2, lastSeen: '2 дн. назад' },
-]
+function studentStatus(stress) {
+  if (stress >= 80) return { label: 'Алерт', style: { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FEE2E2' }, class: 'bg-red-50 text-red-600 border border-red-100' };
+  if (stress >= 60) return { label: 'Риск', style: { background: '#FFFBEB', color: '#D97706', border: '1px solid #FEF3C7' }, class: 'bg-amber-50 text-amber-600 border border-amber-100' };
+  return { label: 'Норма', style: { background: 'var(--color-teal-light)', color: 'var(--color-teal)', border: '1px solid rgba(20,184,166,0.2)' }, class: '' };
+}
 
-const SESSIONS = [
-  { month: 'МАР', day: 14, title: 'Сессия с Аноним #12', sub: '14:00 — 14:50 · Высокий стресс', badge: 'Срочная', badgeClass: 'bg-red-50 text-red-600 border border-red-100', bg: 'bg-orange-50', textColor: 'text-zharyq-orange' },
-  { month: 'МАР', day: 15, title: 'Групповая работа 10А', sub: '11:00 — 12:00 · Техники релаксации', badge: 'Групповая', badgeStyle: { background: 'var(--color-teal-light)', color: 'var(--color-teal)', border: '1px solid rgba(20,184,166,0.2)' }, bg: 'bg-zharyq-teal-light', textColor: 'text-zharyq-teal' },
-  { month: 'МАР', day: 17, title: 'Сессия с Аноним #5', sub: '15:30 — 16:20 · Выгорание', badge: 'Плановая', badgeClass: 'bg-amber-50 text-amber-600 border border-amber-100', bg: 'bg-blue-50', textColor: 'text-blue-500' },
-]
-
-const NOTES = [
-  { id: '12', avatarBg: 'bg-red-100', avatarColor: 'text-red-500', date: '13 мар 2025', text: 'Наблюдается значительное повышение уровня стресса, связанное с приближением ЕНТ. Рекомендованы техники дыхания 4-7-8 и ограничение времени подготовки до 4 часов в день.', tags: [{ label: 'Стресс', cls: 'text-zharyq-orange bg-orange-50 border border-orange-100' }, { label: 'ЕНТ', cls: 'text-zharyq-gray bg-gray-100' }] },
-  { id: '5', avatarBg: 'bg-amber-100', avatarColor: 'text-amber-600', date: '10 мар 2025', text: 'Признаки профессионального выгорания. Потеря интереса к учёбе, сонливость, раздражительность. Назначен курс «Профилактика выгорания». Следующая встреча через 5 дней.', tags: [{ label: 'Выгорание', cls: 'text-amber-600 bg-amber-50 border border-amber-100' }] },
+  { id: 'psm25', title: 'Шкала психологического стресса (PSM-25)', desc: 'Оценка уровня стрессовой нагрузки.', duration: '5-7 мин', questions: 25, icon: Zap, color: 'text-zharyq-orange', bg: 'bg-orange-50' },
+const TESTS_LIB = [
+  { id: 'mbi', title: 'Опросник выгорания (MBI)', desc: 'Диагностика профессионального и учебного выгорания.', duration: '10-15 мин', questions: 22, icon: BatteryLow, color: 'text-amber-500', bg: 'bg-amber-50' },
+  { id: 'beck', title: 'Шкала тревожности Бека (BAI)', desc: 'Оценка выраженности тревожных симптомов.', duration: '10 мин', questions: 21, icon: Brain, color: 'text-violet-500', bg: 'bg-violet-50' },
+  { id: 'smd', title: 'Опросник мотивации', desc: 'Оценка уровня учебной мотивации.', duration: '10 мин', questions: 20, icon: Activity, color: 'text-blue-500', bg: 'bg-blue-50' },
+  { id: 'eq', title: 'Тест на эмоциональный интеллект', desc: 'Оценка эмоционального интеллекта по Холлу.', duration: '15 мин', questions: 30, icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-50' }
 ]
 
 const EMPTY_FORM = {
@@ -61,41 +60,83 @@ const EMPTY_FORM = {
   description: '',
   category: 'Стресс',
   content_type: 'Видео',
-  duration_minutes: 30,
   total_lessons: 5,
   questions: '',
+  duration_minutes: 30,
 }
 
 export default function Psychologist() {
   const { isDark } = useTheme()
-  const { logout } = useAuth()
-  const navigate = useNavigate()
+  const { user: authUser, logout } = useAuth()
   const [view, setView] = useState('alerts')
   const [profileOpen, setProfileOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
 
-  const [courses, setCourses] = useState([])
-  const [coursesLoading, setCoursesLoading] = useState(false)
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editingCourse, setEditingCourse] = useState(null)
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [saving, setSaving] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [alerts, setAlerts] = useState([])
+  const [students, setStudents] = useState([])
+  const [sessions, setSessions] = useState([])
+  const [notes, setNotes] = useState([])
+  const [loading, setLoading] = useState(true)
 
-  const titles = {
-    alerts: ['Алерты', 'Учащиеся, требующие внимания'],
-    users: ['Мои подопечные', 'Назначенные учащиеся'],
-    sessions: ['Сессии', 'Запланированные встречи'],
-    notes: ['Заметки', 'Клинические записи'],
-    courses: ['Управление курсами', 'Создание и редактирование курсов'],
+  useEffect(() => {
+    Promise.all([
+      fetchAlertsRich().catch(() => []),
+      fetchStudentsWithMetrics().catch(() => []),
+      fetchSessions().catch(() => []),
+      fetchNotes().catch(() => [])
+    ]).then(([alertsData, studentsData, sessionsData, notesData]) => {
+      setAlerts(alertsData)
+      setStudents(studentsData)
+      setSessions(sessionsData)
+      setNotes(notesData)
+      setLoading(false)
+    })
+  }, [])
+
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const data = {
+      current_password: form.current_password.value,
+      new_password: form.new_password.value,
+      confirm_password: form.confirm_password.value
+    };
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Неизвестная ошибка');
+      }
+      alert('Пароль успешно изменен!');
+      form.reset();
+    } catch (err) {
+      alert('Ошибка при смене пароля: ' + err.message);
+    }
+  }
+
+  const titles = { 
+    alerts: ['Алерты', 'Учащиеся, требующие внимания'], 
+    users: ['Мои подопечные', 'Назначенные учащиеся'], 
+    sessions: ['Сессии', 'Запланированные встречи'], 
+    notes: ['Заметки', 'Клинические записи'], 
+    tests: ['Тестирование', 'Управление методиками и тестирование'],
+    settings: ['Настройки', 'Управление профилем']
   }
 
   const navItems = [
-    { id: 'alerts', icon: Bell, label: 'Алерты', badge: 3 },
+    { id: 'alerts', icon: Bell, label: 'Алерты', badge: alerts.filter(a => !a.is_resolved).length || null },
     { id: 'users', icon: Users, label: 'Мои подопечные' },
     { id: 'sessions', icon: Calendar, label: 'Сессии' },
-    { id: 'notes', icon: FileText, label: 'Заметки' },
-    { id: 'courses', icon: BookOpen, label: 'Курсы' },
+    { id: 'tests', icon: FileText, label: 'Тестирование' },
+    { id: 'notes', icon: ClipboardList, label: 'Заметки' },
+    { id: 'settings', icon: Settings, label: 'Настройки' },
   ]
 
   const fetchCourses = async () => {
@@ -186,7 +227,8 @@ export default function Psychologist() {
   }
 
   const openProfile = (id) => {
-    setSelectedUser(id)
+    const student = students.find(s => s.id === id)
+    setSelectedUser(student)
     setProfileOpen(true)
   }
   const closeProfile = () => {
@@ -197,18 +239,19 @@ export default function Psychologist() {
   const chartGrid = isDark ? '#3F3F46' : '#E5E7EB'
   const chartText = isDark ? '#A1A1AA' : '#6B7280'
 
-  const radarData = {
+  const radarData = selectedUser ? {
     labels: ['Стресс', 'Выгорание', 'Тревожность', 'Мотивация', 'Эмоции'],
     datasets: [{
       label: 'Профиль',
-      data: [82, 65, 74, 31, 45],
+      data: [selectedUser.stress || 0, selectedUser.burnout || 0, selectedUser.anxiety || 0, selectedUser.motivation || 0, selectedUser.emotion || 0],
       backgroundColor: 'rgba(239,68,68,0.15)',
       borderColor: '#EF4444',
       pointBackgroundColor: '#FFFFFF',
       pointBorderColor: '#EF4444',
       borderWidth: 2,
     }]
-  }
+  } : { datasets: [] }
+
   const radarOptions = {
     responsive: true, maintainAspectRatio: true,
     plugins: { legend: { display: false } },
@@ -242,234 +285,318 @@ export default function Psychologist() {
         <div className="flex flex-col gap-1 mb-8">
           <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">Рабочее пространство</p>
           {navItems.map(item => (
-            <button key={item.id} onClick={() => setView(item.id)} className={`psych-nav ${view === item.id ? 'active-nav' : 'text-zharyq-gray hover:bg-gray-100'}`}>
+            <button key={item.id} onClick={() => setView(item.id)} className={`psych-nav ${view === item.id ? 'active-nav' : 'text-zharyq-gray hover:bg-gray-100'} w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors`}>
               <item.icon size={16} />
-              {item.label}
-              {item.badge && <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{item.badge}</span>}
+              <span className="flex-1 text-left">{item.label}</span>
+              {item.badge && <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{item.badge}</span>}
             </button>
           ))}
         </div>
         <div className="flex-1" />
-        <div className="pt-4 border-t border-zharyq-border mt-4 flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-tr from-zharyq-teal to-blue-400 rounded-full flex items-center justify-center text-white text-xs font-bold">АК</div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">Айгуль К.</p>
-            <p className="text-[10px] text-zharyq-gray flex items-center gap-1"><ShieldCheck size={12} /> Психолог</p>
+        <div className="pt-4 border-t border-zharyq-border mt-4 flex items-center gap-3 cursor-pointer" onClick={() => setView('settings')}>
+          <div className="w-8 h-8 bg-gradient-to-tr from-zharyq-teal to-blue-400 rounded-full flex items-center justify-center text-white text-xs font-bold">
+            {authUser?.username?.[0]?.toUpperCase() || 'P'}
           </div>
-          <button 
-            onClick={() => {
-              logout()
-              navigate('/')
-            }} 
-            className="text-zharyq-gray hover:text-zharyq-dark transition-colors" 
-            title="Выйти"
-          >
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{authUser?.username || 'Психолог'}</p>
+            <p className="text-[10px] text-zharyq-gray flex items-center gap-1"><ShieldCheck size={12} /> {authUser?.class_name || 'Нет класса'}</p>
+          </div>
+          <button onClick={(e) => { e.stopPropagation(); logout(); }} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title="Выйти">
             <LogOut size={16} />
           </button>
         </div>
       </aside>
 
       {/* MAIN */}
-      <main className="flex-1 flex flex-col h-full bg-white overflow-hidden">
-        <header className="border-b border-zharyq-border px-6 py-4 flex items-center justify-between bg-white shrink-0">
+      <main className="flex-1 flex flex-col h-full bg-white overflow-hidden text-zharyq-dark">
+        <header className="border-b border-zharyq-border px-6 py-4 flex items-center justify-between text-zharyq-dark bg-white shrink-0">
           <div>
-            <h1 className="text-lg font-semibold">{titles[view][0]}</h1>
-            <p className="text-xs text-zharyq-gray mt-0.5">{titles[view][1]}</p>
+            <h1 className="text-lg font-semibold">{titles[view]?.[0]}</h1>
+            <p className="text-xs text-zharyq-gray mt-0.5">{titles[view]?.[1]}</p>
           </div>
           <div className="flex items-center gap-3">
-            {view !== 'courses' && (
-              <>
-                <div className="relative">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
-                  <input type="text" placeholder="Поиск…" className="border border-zharyq-border rounded-xl pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52" />
-                </div>
-                <select className="border border-zharyq-border rounded-xl px-3 py-2 text-sm bg-white text-zharyq-gray focus:ring-0 cursor-pointer">
-                  <option>Все классы</option><option>10А</option><option>10Б</option><option>11А</option>
-                </select>
-              </>
-            )}
-            {view === 'courses' && (
-              <button onClick={() => navigate('/course-builder')} className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-xl transition-colors" style={{ background: 'var(--color-accent)' }}>
-                <Plus size={16} /> Создать курс
-              </button>
-            )}
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
+              <input type="text" placeholder="Поиск…" className="border border-zharyq-border rounded-xl text-zharyq-dark pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52" />
+            </div>
+            <select className="border border-zharyq-border rounded-xl px-3 text-zharyq-dark py-2 text-sm bg-white focus:ring-0 cursor-pointer">
+              <option>Все классы</option>
+            </select>
           </div>
         </header>
 
-        {/* ALERTS VIEW */}
-        {view === 'alerts' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-4xl mx-auto">
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                {[
-                  { icon: AlertTriangle, bg: 'bg-red-50', color: 'text-red-500', count: 3, label: 'Критических' },
-                  { icon: Activity, bg: 'bg-amber-50', color: 'text-amber-500', count: 7, label: 'Средних' },
-                  { icon: CheckCircle, bg: 'bg-zharyq-teal-light', color: 'text-zharyq-teal', count: 24, label: 'В норме' },
-                ].map((s, i) => (
-                  <div key={i} className="border border-zharyq-border rounded-2xl p-4 flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl ${s.bg} flex items-center justify-center shrink-0`}>
-                      <s.icon size={20} className={s.color} />
+        {loading ? (
+          <div className="flex items-center justify-center p-12 text-zharyq-gray"><Activity className="animate-pulse" /></div>
+        ) : (
+          <>
+            {/* ALERTS VIEW */}
+            {view === 'alerts' && (
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="max-w-4xl mx-auto">
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    {[
+                      { icon: AlertTriangle, bg: 'bg-red-50', color: 'text-red-500', count: alerts.filter(a => a.level === 'critical').length, label: 'Критических' },
+                      { icon: Activity, bg: 'bg-amber-50', color: 'text-amber-500', count: alerts.filter(a => a.level === 'medium' || a.level === 'high').length, label: 'Средних' },
+                      { icon: CheckCircle, bg: 'bg-zharyq-teal-light', color: 'text-zharyq-teal', count: students.length - alerts.filter(a => !a.is_resolved).length, label: 'В норме' },
+                    ].map((s, i) => (
+                      <div key={i} className="border border-zharyq-border rounded-2xl p-4 flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl ${s.bg} flex items-center justify-center shrink-0`}>
+                          <s.icon size={20} className={s.color} />
+                        </div>
+                        <div>
+                          <p className="text-xl font-bold">{Math.max(0, s.count)}</p>
+                          <p className="text-xs text-zharyq-gray">{s.label}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border border-zharyq-border rounded-2xl overflow-hidden text-zharyq-dark">
+                    <div className="px-5 py-4 border-b border-zharyq-border flex items-center justify-between">
+                      <h2 className="text-sm font-semibold">Активные алерты</h2>
+                      <span className="text-[11px] text-zharyq-gray">Синхронизировано</span>
                     </div>
-                    <div>
-                      <p className="text-xl font-bold">{s.count}</p>
-                      <p className="text-xs text-zharyq-gray">{s.label}</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-zharyq-border bg-zharyq-bg text-zharyq-dark">
+                            {['Пользователь', 'Класс', 'Тип алерта', 'Уровень', 'Время', 'Действие'].map(h => (
+                              <th key={h} className="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {alerts.filter(a => !a.is_resolved).map((a, i) => {
+                            const meta = levelMeta(a.level);
+                            return (
+                              <tr key={i} className="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
+                                <td className="px-5 py-3.5">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className={`w-7 h-7 rounded-full ${meta.bg} flex items-center justify-center text-xs font-bold ${meta.color}`}>U{a.user_id}</div>
+                                    <span className="text-sm font-medium">{a.anonymous_id || `Студент #${a.user_id}`}</span>
+                                  </div>
+                                </td>
+                                <td className="px-5 py-3.5 text-zharyq-gray text-xs">{a.class_name || '-'}</td>
+                                <td className="px-5 py-3.5 text-xs font-medium">{a.alert_type}</td>
+                                <td className="px-5 py-3.5">
+                                  <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${meta.class} border px-2 py-0.5 rounded-full`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">{timeAgo(a.created_at)}</td>
+                                <td className="px-5 py-3.5">
+                                  <button onClick={() => openProfile(a.user_id)} className="text-xs font-medium text-zharyq-orange hover:underline">Профиль</button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                          {alerts.filter(a => !a.is_resolved).length === 0 && (
+                            <tr><td colSpan="6" className="text-center py-6 text-sm text-zharyq-gray">Нет активных алертов</td></tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                ))}
-              </div>
-              <div className="border border-zharyq-border rounded-2xl overflow-hidden">
-                <div className="px-5 py-4 border-b border-zharyq-border flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">Активные алерты</h2>
-                  <span className="text-[11px] text-zharyq-gray">Обновлено 2 мин назад</span>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-zharyq-border bg-zharyq-bg">
-                        {['Пользователь', 'Класс', 'Тип алерта', 'Уровень', 'Время', 'Действие'].map(h => (
-                          <th key={h} className="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ALERTS.map((a, i) => (
-                        <tr key={i} className="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-2.5">
-                              <div className={`w-7 h-7 rounded-full ${a.avatarBg} flex items-center justify-center text-xs font-bold ${a.avatarColor}`}>U{a.id}</div>
-                              <span className="text-sm font-medium">{a.anon}</span>
+              </div>
+            )}
+
+            {/* USERS VIEW */}
+            {view === 'users' && (
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="max-w-4xl mx-auto">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-zharyq-dark">
+                    {students.map(u => {
+                      const stat = studentStatus(u.stress);
+                      return (
+                        <div key={u.id} onClick={() => openProfile(u.id)} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group">
+                          <div className="flex items-center gap-3 mb-4">
+                            <div className={`w-9 h-9 rounded-full bg-gradient-to-tr from-zharyq-teal to-blue-400 flex items-center justify-center text-white text-xs font-bold shrink-0`}>U{u.id}</div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">{u.anonymous_id || `Аноним #${u.id}`}</p>
+                              <p className="text-xs text-zharyq-gray">{u.class_name || 'Нет класса'} · {u.last_checkin_date ? timeAgo(u.last_checkin_date) : 'Нет чекинов'}</p>
                             </div>
-                          </td>
-                          <td className="px-5 py-3.5 text-zharyq-gray text-xs">{a.class}</td>
-                          <td className="px-5 py-3.5 text-xs font-medium">{a.type}</td>
-                          <td className="px-5 py-3.5">
-                            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${a.levelClass} border px-2 py-0.5 rounded-full`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${a.dot}`} /> {a.level}
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${stat.class}`} style={stat.style}>{stat.label}</span>
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-zharyq-gray w-16 shrink-0">Стресс</span>
+                              <div className="flex-1 bg-gray-100 rounded-full h-1">
+                                <div className="h-1 rounded-full" style={{ width: `${Math.min(100, Math.max(0, u.stress))}%`, background: u.stress > 60 ? '#F87171' : 'var(--color-accent)' }} />
+                              </div>
+                              <span className="text-zharyq-gray w-5 text-right">{u.stress || 0}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-zharyq-gray w-16 shrink-0">Мотивация</span>
+                              <div className="flex-1 bg-gray-100 rounded-full h-1">
+                                <div className="h-1 rounded-full" style={{ width: `${Math.min(100, Math.max(0, u.motivation))}%`, background: u.motivation < 40 ? '#FBBF24' : 'var(--color-teal)' }} />
+                              </div>
+                              <span className="text-zharyq-gray w-5 text-right">{u.motivation || 0}</span>
+                            </div>
+                          </div>
+                          <p className="text-[11px] text-zharyq-gray mt-3 flex items-center gap-1">
+                            <span>{u.sessions_count || 0} сессий · {u.courses_count || 0} курсов</span>
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SESSIONS VIEW */}
+            {view === 'sessions' && (
+              <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark">
+                <div className="max-w-3xl mx-auto">
+                  <div className="border border-zharyq-border rounded-2xl overflow-hidden">
+                    <div className="px-5 py-4 border-b border-zharyq-border">
+                      <h2 className="text-sm font-semibold">Запланированные сессии</h2>
+                    </div>
+                    <div className="divide-y divide-zharyq-border">
+                      {sessions.map((s, i) => {
+                        const d = new Date(s.scheduled_at);
+                        return (
+                          <div key={i} className="flex items-center gap-4 px-5 py-4 hover:bg-zharyq-bg transition-colors">
+                            <div className={`w-10 h-10 rounded-xl bg-zharyq-teal-light flex flex-col items-center justify-center shrink-0`}>
+                              <span className={`text-[10px] text-zharyq-teal font-semibold`}>{d.toLocaleString('ru-RU', {month:'short'}).toUpperCase()}</span>
+                              <span className={`text-sm font-bold text-zharyq-teal leading-tight`}>{d.getDate()}</span>
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{s.title}</p>
+                              <p className="text-xs text-zharyq-gray">{d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} · {s.session_type}</p>
+                            </div>
+                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border border-teal-100 text-teal-600 bg-teal-50`}>
+                              {s.is_completed ? 'Завершена' : 'Запланирована'}
                             </span>
-                          </td>
-                          <td className="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">{a.time}</td>
-                          <td className="px-5 py-3.5">
-                            <button onClick={() => openProfile(a.id)} className="text-xs font-medium text-zharyq-orange hover:underline">Просмотреть</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </div>
+                        )
+                      })}
+                      {sessions.length === 0 && <p className="p-6 text-sm text-center text-zharyq-gray">Нет сессий</p>}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* USERS VIEW */}
-        {view === 'users' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-4xl mx-auto">
-              <div className="flex gap-1 p-1 bg-zharyq-bg border border-zharyq-border rounded-xl w-fit mb-6">
-                {['10А', '10Б', '11А'].map((cls, i) => (
-                  <button key={cls} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${i === 0 ? 'text-white' : 'text-zharyq-gray hover:text-zharyq-dark'}`} style={i === 0 ? { background: 'var(--color-accent)' } : {}}>{cls}</button>
-                ))}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {USERS.map(u => (
-                  <div key={u.id} onClick={() => openProfile(u.id)} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className={`w-9 h-9 rounded-full bg-gradient-to-tr ${u.gradient} flex items-center justify-center text-white text-xs font-bold shrink-0`}>U{u.id}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">Аноним #{u.id}</p>
-                        <p className="text-xs text-zharyq-gray">10А · Последний вход: {u.lastSeen}</p>
-                      </div>
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${u.statusClass || ''}`} style={u.statusStyle || {}}>{u.status}</span>
+            {/* TESTS VIEW */}
+            {view === 'tests' && (
+              <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark">
+                <div className="max-w-4xl mx-auto">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="relative flex-1 max-w-md">
+                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
+                      <input type="text" placeholder="Поиск методики..." className="w-full text-zharyq-dark border border-zharyq-border rounded-xl pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all" />
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-zharyq-gray w-16 shrink-0">Стресс</span>
-                        <div className="flex-1 bg-gray-100 rounded-full h-1">
-                          <div className="h-1 rounded-full" style={{ width: `${u.stress}%`, background: u.stress > 60 ? '#F87171' : 'var(--color-accent)' }} />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {TESTS_LIB.map(t => (
+                      <div key={t.id} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group flex flex-col h-full">
+                        <div className="flex items-start gap-3 mb-3">
+                          <div className={`w-10 h-10 rounded-xl ${t.bg} flex items-center justify-center shrink-0`}>
+                            <t.icon size={20} className={t.color} />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors leading-tight mb-1">{t.title}</h4>
+                            <p className="text-[11px] text-zharyq-gray leading-relaxed">{t.desc}</p>
+                          </div>
                         </div>
-                        <span className="text-zharyq-gray w-5 text-right">{u.stress}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-zharyq-gray w-16 shrink-0">Мотивация</span>
-                        <div className="flex-1 bg-gray-100 rounded-full h-1">
-                          <div className="h-1 rounded-full" style={{ width: `${u.motivation}%`, background: u.motivation < 50 ? '#FBBF24' : 'var(--color-teal)' }} />
+                        <div className="mt-auto pt-3 border-t border-zharyq-border">
+                          <div className="flex items-center justify-between mb-3 text-[11px] text-zharyq-gray">
+                            <span className="flex items-center gap-1"><Clock size={12} /> {t.duration}</span>
+                            <span className="flex items-center gap-1"><Layers size={12} /> {t.questions} вопр.</span>
+                          </div>
+                          <button className="w-full py-1.5 text-[11px] font-semibold text-zharyq-dark border border-zharyq-border rounded-lg hover:bg-gray-50 transition-colors">
+                            Назначить классу
+                          </button>
                         </div>
-                        <span className="text-zharyq-gray w-5 text-right">{u.motivation}</span>
                       </div>
-                    </div>
-                    <p className="text-[11px] text-zharyq-gray mt-3 flex items-center gap-1">
-                      <span>{u.sessions} сессий · {u.courses} {u.courses === 1 ? 'курс' : 'курса'}</span>
-                    </p>
-                  </div>
-                ))}
-                <div className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer border-dashed opacity-60">
-                  <div className="flex flex-col items-center justify-center h-full py-6 gap-2 text-zharyq-gray">
-                    <Users size={24} />
-                    <span className="text-xs">Назначить ещё</span>
+                    ))}
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* SESSIONS VIEW */}
-        {view === 'sessions' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-3xl mx-auto">
-              <div className="border border-zharyq-border rounded-2xl overflow-hidden">
-                <div className="px-5 py-4 border-b border-zharyq-border">
-                  <h2 className="text-sm font-semibold">Запланированные сессии</h2>
-                </div>
-                <div className="divide-y divide-zharyq-border">
-                  {SESSIONS.map((s, i) => (
-                    <div key={i} className="flex items-center gap-4 px-5 py-4 hover:bg-zharyq-bg transition-colors">
-                      <div className={`w-10 h-10 rounded-xl ${s.bg} flex flex-col items-center justify-center shrink-0`}>
-                        <span className={`text-[10px] ${s.textColor} font-semibold`}>{s.month}</span>
-                        <span className={`text-sm font-bold ${s.textColor} leading-tight`}>{s.day}</span>
+            {/* NOTES VIEW */}
+            {view === 'notes' && (
+              <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark">
+                <div className="max-w-3xl mx-auto">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-sm font-semibold">Клинические заметки</h2>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    {notes.map(n => (
+                      <div key={n.id} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer">
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-500`}>U{n.user_id}</div>
+                            <span className="text-sm font-semibold">Аноним #{n.user_id}</span>
+                          </div>
+                          <span className="text-[11px] text-zharyq-gray shrink-0">{timeAgo(n.created_at)}</span>
+                        </div>
+                        <p className="text-xs text-zharyq-gray leading-relaxed">{n.content}</p>
+                        {n.tags && (
+                          <div className="flex gap-2 mt-3">
+                            {n.tags.split(',').map(t => <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 break-words">{t.trim()}</span>)}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{s.title}</p>
-                        <p className="text-xs text-zharyq-gray">{s.sub}</p>
-                      </div>
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${s.badgeClass || ''}`} style={s.badgeStyle || {}}>{s.badge}</span>
-                    </div>
-                  ))}
+                    ))}
+                    {notes.length === 0 && <p className="text-sm py-4 text-center text-zharyq-gray">Нет заметок</p>}
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* NOTES VIEW */}
-        {view === 'notes' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-3xl mx-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold">Клинические заметки</h2>
-                <button className="text-xs font-medium text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors" style={{ background: 'var(--color-accent)' }}>
-                  <Plus size={14} /> Новая заметка
-                </button>
-              </div>
-              <div className="flex flex-col gap-3">
-                {NOTES.map(n => (
-                  <div key={n.id} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-6 h-6 rounded-full ${n.avatarBg} flex items-center justify-center text-[10px] font-bold ${n.avatarColor}`}>U{n.id}</div>
-                        <span className="text-sm font-semibold">Аноним #{n.id}</span>
+            {/* SETTINGS VIEW */}
+            {view === 'settings' && (
+              <div className="flex-1 overflow-y-auto p-6 bg-zharyq-bg/30 text-zharyq-dark">
+                <div className="max-w-2xl mx-auto space-y-6">
+                  <div className="bg-white border text-zharyq-dark border-zharyq-border rounded-2xl p-6">
+                    <h3 className="text-sm font-semibold mb-4">Информация о профиле</h3>
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-zharyq-teal to-blue-400 flex items-center justify-center text-white text-xl font-bold">
+                        {authUser?.username?.[0]?.toUpperCase() || 'U'}
                       </div>
-                      <span className="text-[11px] text-zharyq-gray shrink-0">{n.date}</span>
+                      <div>
+                        <p className="font-semibold text-lg">{authUser?.username}</p>
+                        <p className="text-sm text-zharyq-gray">{authUser?.role}</p>
+                      </div>
                     </div>
-                    <p className="text-xs text-zharyq-gray leading-relaxed">{n.text}</p>
-                    <div className="flex gap-2 mt-3">
-                      {n.tags.map(t => <span key={t.label} className={`text-[10px] px-2 py-0.5 rounded-full ${t.cls}`}>{t.label}</span>)}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-zharyq-gray mb-1">Email</p>
+                        <p className="text-sm font-medium">{authUser?.email || 'Не указан'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-zharyq-gray mb-1">Класс</p>
+                        <p className="text-sm font-medium">{authUser?.class_name || 'Все'}</p>
+                      </div>
                     </div>
                   </div>
-                ))}
+
+                  <div className="bg-white border text-zharyq-dark border-zharyq-border rounded-2xl p-6">
+                    <h3 className="text-sm font-semibold mb-4">Смена пароля</h3>
+                    <form className="space-y-4" onSubmit={handlePasswordChange}>
+                      <div>
+                        <label className="block text-xs text-zharyq-gray mb-1">Текущий пароль</label>
+                        <input type="password" name="current_password" required className="w-full text-zharyq-dark border border-zharyq-border rounded-xl px-3 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zharyq-gray mb-1">Новый пароль</label>
+                        <input type="password" name="new_password" required className="w-full text-zharyq-dark border border-zharyq-border rounded-xl px-3 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zharyq-gray mb-1">Подтверждение пароля</label>
+                        <input type="password" name="confirm_password" required className="w-full text-zharyq-dark border border-zharyq-border rounded-xl px-3 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none" />
+                      </div>
+                      <button type="submit" className="px-4 py-2 bg-zharyq-orange text-white text-sm font-semibold rounded-xl hover:bg-orange-600 transition-colors">Обновить пароль</button>
+                    </form>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
 
         {/* COURSES VIEW */}
@@ -547,49 +674,43 @@ export default function Psychologist() {
 
       {/* PROFILE DRAWER */}
       <div className={`fixed inset-0 bg-black/30 z-40 transition-opacity duration-200 ${profileOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={closeProfile} />
-      <aside className={`fixed top-0 right-0 h-full w-full max-w-sm bg-white border-l border-zharyq-border z-50 transition-transform duration-300 overflow-y-auto flex flex-col ${profileOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-        <div className="p-5 border-b border-zharyq-border flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Профиль учащегося</h2>
-          <button onClick={closeProfile} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><X size={20} /></button>
-        </div>
-        <div className="p-5 flex-1">
-          <div className="flex items-center gap-3 mb-5 pb-5 border-b border-zharyq-border">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-orange-300 to-red-400 flex items-center justify-center text-white text-sm font-bold">U{selectedUser}</div>
-            <div>
-              <p className="font-semibold">Аноним #{selectedUser}</p>
-              <p className="text-xs text-zharyq-gray">10А · Последний чек-ин: сегодня</p>
+      <aside className={`fixed top-0 right-0 h-full w-full max-w-sm bg-white text-zharyq-dark border-l border-zharyq-border z-50 transition-transform duration-300 overflow-y-auto flex flex-col ${profileOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        {selectedUser && (
+          <>
+            <div className="p-5 border-b border-zharyq-border flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Профиль учащегося</h2>
+              <button onClick={closeProfile} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><X size={20} /></button>
             </div>
-            <span className="ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-100">Критический</span>
-          </div>
-          <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Психологический профиль</p>
-          <div className="w-full aspect-square max-w-[240px] mx-auto mb-5">
-            <Radar data={radarData} options={radarOptions} />
-          </div>
-          <div className="grid grid-cols-2 gap-3 mb-5">
-            {[{ label: 'Стресс', value: 82, color: 'text-red-500', delta: '↑ +12', deltaColor: 'text-red-400' }, { label: 'Мотивация', value: 31, color: 'text-amber-500', delta: '↓ -18', deltaColor: 'text-amber-400' }, { label: 'Тревожность', value: 74, color: 'text-red-500', delta: '↑ +8', deltaColor: 'text-red-400' }, { label: 'Курсов пройдено', value: 1, color: '', delta: 'из 5', deltaColor: 'text-zharyq-gray' }].map(m => (
-              <div key={m.label} className="border border-zharyq-border rounded-xl p-3">
-                <p className="text-xs text-zharyq-gray mb-1">{m.label}</p>
-                <div className="flex items-end gap-2">
-                  <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
-                  <span className={`text-[10px] ${m.deltaColor} mb-0.5`}>{m.delta}</span>
+            <div className="p-5 flex-1">
+              <div className="flex items-center gap-3 mb-5 pb-5 border-b border-zharyq-border">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-orange-300 to-red-400 flex items-center justify-center text-white text-sm font-bold">U{selectedUser.id}</div>
+                <div>
+                  <p className="font-semibold">{selectedUser.anonymous_id || `Аноним #${selectedUser.id}`}</p>
+                  <p className="text-xs text-zharyq-gray">{selectedUser.class_name} · Последний чек-ин: {selectedUser.last_checkin_date ? timeAgo(selectedUser.last_checkin_date) : 'никогда'}</p>
                 </div>
+                <span className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${studentStatus(selectedUser.stress).class}`} style={studentStatus(selectedUser.stress).style}>{studentStatus(selectedUser.stress).label}</span>
               </div>
-            ))}
-          </div>
-          <div className="border border-zharyq-border rounded-xl p-3.5 mb-5" style={{ background: 'var(--color-accent-light)', borderColor: 'rgba(255,113,0,0.2)' }}>
-            <div className="flex items-start gap-2">
-              <Sparkles size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--color-accent)' }} />
-              <div>
-                <p className="text-xs font-semibold mb-1" style={{ color: 'var(--color-accent)' }}>Рекомендация AI</p>
-                <p className="text-xs text-zharyq-gray leading-relaxed">Уровень стресса критически высок. Рекомендуется немедленная личная консультация и назначение курса «Управление стрессом».</p>
+              <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Психологический профиль</p>
+              <div className="w-full aspect-square max-w-[240px] mx-auto mb-5">
+                <Radar data={radarData} options={radarOptions} />
               </div>
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                {[{ label: 'Стресс', value: selectedUser.stress || 0, color: 'text-red-500' }, { label: 'Мотивация', value: selectedUser.motivation || 0, color: 'text-amber-500' }, { label: 'Тревожность', value: selectedUser.anxiety || 0, color: 'text-orange-500' }, { label: 'Курсов', value: selectedUser.courses_count || 0, color: 'text-blue-500' }].map(m => (
+                  <div key={m.label} className="border border-zharyq-border rounded-xl p-3">
+                    <p className="text-xs text-zharyq-gray mb-1">{m.label}</p>
+                    <div className="flex items-end gap-2">
+                      <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-colors" style={{ background: 'var(--color-accent)' }}>
+                <Calendar size={16} className="inline mr-2" />
+                Назначить сессию
+              </button>
             </div>
-          </div>
-          <button className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-colors" style={{ background: 'var(--color-accent)' }}>
-            <Calendar size={16} className="inline mr-2" />
-            Назначить сессию
-          </button>
-        </div>
+          </>
+        )}
       </aside>
 
       {/* COURSE MODAL */}
@@ -664,6 +785,7 @@ export default function Psychologist() {
                     className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
                   />
                 </div>
+                <span className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${studentStatus(selectedUser.stress).class}`} style={studentStatus(selectedUser.stress).style}>{studentStatus(selectedUser.stress).label}</span>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Вопросы курса</label>
@@ -688,6 +810,20 @@ export default function Psychologist() {
                   {saving ? 'Сохранение...' : editingCourse ? 'Сохранить' : 'Создать'}
                 </button>
               </div>
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                {[{ label: 'Стресс', value: selectedUser.stress || 0, color: 'text-red-500' }, { label: 'Мотивация', value: selectedUser.motivation || 0, color: 'text-amber-500' }, { label: 'Тревожность', value: selectedUser.anxiety || 0, color: 'text-orange-500' }, { label: 'Курсов', value: selectedUser.courses_count || 0, color: 'text-blue-500' }].map(m => (
+                  <div key={m.label} className="border border-zharyq-border rounded-xl p-3">
+                    <p className="text-xs text-zharyq-gray mb-1">{m.label}</p>
+                    <div className="flex items-end gap-2">
+                      <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-colors" style={{ background: 'var(--color-accent)' }}>
+                <Calendar size={16} className="inline mr-2" />
+                Назначить сессию
+              </button>
             </div>
           </div>
         </div>

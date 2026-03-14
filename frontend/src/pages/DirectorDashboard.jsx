@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Briefcase } from 'lucide-react'
 import { Pie, Line } from 'react-chartjs-2'
 import {
@@ -6,33 +7,50 @@ import {
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
+import { 
+  fetchDirectorDashboard, 
+  fetchStudentsWithMetrics, 
+  fetchStressDistribution, 
+  fetchOrgMetrics 
+} from '../api/api'
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Filler)
 
-const USERS_TABLE = [
-  { id: 'user_7ab2', class: '10-А', risk: 'Средний', riskClass: 'bg-amber-50 text-amber-700 border-amber-200', time: 'Сегодня, 09:15' },
-  { id: 'user_f31c', class: '9-Б', risk: 'Критический', riskClass: 'bg-red-50 text-red-600 border-red-200', time: 'Сегодня, 08:40' },
-  { id: 'user_19de', class: '11-В', risk: 'Низкий', riskClass: 'bg-green-50 text-green-700 border-green-200', time: 'Вчера, 16:22' },
-  { id: 'user_a8f0', class: '8-Г', risk: 'Средний', riskClass: 'bg-amber-50 text-amber-700 border-amber-200', time: 'Вчера, 11:03' },
-]
-
-const KPI_CARDS = [
-  { label: 'Общий индекс благополучия', value: '82%', delta: '+4.1% за месяц', deltaClass: 'text-emerald-600' },
-  { label: 'Количество критических алертов', value: '7', delta: '-2 за неделю', deltaClass: 'text-red-600' },
-  { label: 'Уровень вовлеченности', value: '76%', delta: 'Курсы пройдены', deltaClass: 'text-zharyq-teal', span: 'sm:col-span-2 xl:col-span-1' },
-]
-
 export default function DirectorDashboard() {
   const { isDark } = useTheme()
+  const [dashboard, setDashboard] = useState(null)
+  const [students, setStudents] = useState([])
+  const [stressDist, setStressDist] = useState(null)
+  const [orgMetrics, setOrgMetrics] = useState([])
+
+  useEffect(() => {
+    Promise.all([
+      fetchDirectorDashboard().catch(() => null),
+      fetchStudentsWithMetrics().catch(() => []),
+      fetchStressDistribution().catch(() => null),
+      fetchOrgMetrics().catch(() => [])
+    ]).then(([dDash, dStud, dStress, dOrg]) => {
+      if (dDash) setDashboard(dDash)
+      setStudents(dStud || [])
+      if (dStress) setStressDist(dStress)
+      setOrgMetrics(dOrg || [])
+    })
+  }, [])
 
   const chartText = isDark ? '#A1A1AA' : '#6B7280'
   const chartGrid = isDark ? '#3F3F46' : '#F3F4F6'
   const surfaceColor = isDark ? '#27272A' : '#F9FAFB'
 
+  const KPI_CARDS = [
+    { label: 'Общий индекс благополучия', value: dashboard ? `${dashboard.wellbeing_index}%` : '...', delta: 'Средний по школе', deltaClass: 'text-emerald-600' },
+    { label: 'Алертов (Крит / Сред)', value: dashboard ? `${dashboard.critical_alerts} / ${dashboard.medium_alerts}` : '...', delta: 'Требуют внимания', deltaClass: 'text-red-600' },
+    { label: 'Уровень вовлеченности', value: dashboard ? `${dashboard.engagement_rate}%` : '...', delta: 'В учебный процесс', deltaClass: 'text-zharyq-teal', span: 'sm:col-span-2 xl:col-span-1' },
+  ]
+
   const pieData = {
     labels: ['Низкий', 'Умеренный', 'Высокий', 'Критический'],
     datasets: [{
-      data: [38, 34, 20, 8],
+      data: stressDist ? [stressDist.low, stressDist.medium, stressDist.high, stressDist.critical] : [0,0,0,0],
       backgroundColor: ['#14B8A6', '#60A5FA', '#F59E0B', '#EF4444'],
       borderColor: surfaceColor,
       borderWidth: 2,
@@ -50,11 +68,12 @@ export default function DirectorDashboard() {
     }
   }
 
+  const sortedOrg = [...orgMetrics].reverse()
   const lineData = {
-    labels: ['Сен', 'Окт', 'Ноя', 'Дек', 'Янв', 'Фев', 'Мар'],
+    labels: sortedOrg.length ? sortedOrg.map(m => new Date(m.recorded_at).toLocaleDateString('ru-RU', {month:'short', day:'numeric'})) : ['Нет данных'],
     datasets: [{
-      label: 'Индекс эмоционального фона',
-      data: [64, 67, 63, 69, 71, 74, 78],
+      label: 'Индекс благополучия',
+      data: sortedOrg.length ? sortedOrg.map(m => m.wellbeing_index) : [0],
       borderColor: '#FF7100',
       backgroundColor: 'rgba(255, 113, 0, 0.12)',
       fill: true,
@@ -74,8 +93,15 @@ export default function DirectorDashboard() {
     plugins: { legend: { labels: { color: chartText, font: { size: 12 } } } },
     scales: {
       x: { ticks: { color: chartText }, grid: { color: chartGrid } },
-      y: { min: 50, max: 85, ticks: { color: chartText, stepSize: 5 }, grid: { color: chartGrid } }
+      y: { min: 0, max: 100, ticks: { color: chartText, stepSize: 20 }, grid: { color: chartGrid } }
     }
+  }
+
+  const getRiskProps = (stress) => {
+    if (stress >= 80) return { label: 'Критический', cls: 'bg-red-50 text-red-600 border-red-200' };
+    if (stress >= 60) return { label: 'Высокий', cls: 'bg-orange-50 text-orange-600 border-orange-200' };
+    if (stress >= 40) return { label: 'Средний', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+    return { label: 'Низкий', cls: 'bg-green-50 text-green-700 border-green-200' };
   }
 
   return (
@@ -94,14 +120,14 @@ export default function DirectorDashboard() {
           <div className="flex items-center gap-2 sm:gap-3">
             <span className="hidden sm:flex items-center gap-2 text-xs text-zharyq-gray border border-zharyq-border rounded-full px-3 py-1.5">
               <span className="w-2 h-2 rounded-full bg-zharyq-teal" />
-              Обновлено 2 мин назад
+              Live
             </span>
             <ThemeToggle />
           </div>
         </div>
       </header>
 
-      <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 space-y-4">
+      <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 space-y-4 text-zharyq-dark">
         <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {KPI_CARDS.map((card, i) => (
             <article key={i} className={`rounded-2xl border border-zharyq-border bg-zharyq-bg p-5 ${card.span || ''}`}>
@@ -122,14 +148,14 @@ export default function DirectorDashboard() {
             </div>
           </article>
           <article className="rounded-2xl border border-zharyq-border bg-zharyq-bg p-5 xl:col-span-2">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray mb-4">Эмоциональный фон по месяцам</h2>
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray mb-4">Эмоциональный фон (по записям)</h2>
             <div style={{ height: '280px' }}>
               <Line data={lineData} options={lineOptions} />
             </div>
           </article>
         </section>
 
-        <section className="grid grid-cols-1 2xl:grid-cols-3 gap-4">
+        <section className="grid grid-cols-1 2xl:grid-cols-3 gap-4 text-zharyq-dark">
           <article className="2xl:col-span-2 rounded-2xl border border-zharyq-border bg-zharyq-bg p-5">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray">Управление: Пользователи</h2>
@@ -137,31 +163,32 @@ export default function DirectorDashboard() {
                 <button className="text-sm font-medium px-4 py-2 rounded-xl border border-zharyq-border hover:border-zharyq-orange hover:text-zharyq-orange transition-colors">
                   Добавить пользователей
                 </button>
-                <button className="text-sm font-medium px-4 py-2 rounded-xl bg-zharyq-orange text-white hover:bg-zharyq-orange-hover transition-colors">
-                  Назначить психолога
-                </button>
               </div>
             </div>
             <div className="overflow-x-auto rounded-xl border border-zharyq-border">
               <table className="w-full min-w-[640px] text-sm">
-                <thead className="bg-zharyq-bg border-b border-zharyq-border">
+                <thead className="bg-white border-b border-zharyq-border">
                   <tr>
                     {['ФИО (анонимизировано)', 'Класс', 'Риск', 'Последний чек-ин'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-zharyq-gray">{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody>
-                  {USERS_TABLE.map((u, i) => (
-                    <tr key={u.id} className={`${i < USERS_TABLE.length - 1 ? 'border-b border-zharyq-border' : ''} hover:bg-white transition-colors`}>
-                      <td className="px-4 py-3 font-medium">{u.id}</td>
-                      <td className="px-4 py-3 text-zharyq-gray">{u.class}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold border ${u.riskClass}`}>{u.risk}</span>
-                      </td>
-                      <td className="px-4 py-3 text-zharyq-gray">{u.time}</td>
-                    </tr>
-                  ))}
+                <tbody className="bg-white">
+                  {students.map((u, i) => {
+                    const risk = getRiskProps(u.stress || 0);
+                    const d = u.last_checkin_date ? new Date(u.last_checkin_date).toLocaleString('ru-RU') : 'Нет чекинов';
+                    return (
+                      <tr key={u.id} className={`${i < students.length - 1 ? 'border-b border-zharyq-border' : ''} hover:bg-white transition-colors`}>
+                        <td className="px-4 py-3 font-medium">{u.anonymous_id || `User #${u.id}`}</td>
+                        <td className="px-4 py-3 text-zharyq-gray">{u.class_name || '-'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold border ${risk.cls}`}>{risk.label}</span>
+                        </td>
+                        <td className="px-4 py-3 text-zharyq-gray">{d}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -171,18 +198,17 @@ export default function DirectorDashboard() {
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray">ROI и метрики</h2>
             <div className="rounded-xl border border-zharyq-border bg-white p-4">
               <p className="text-sm leading-relaxed">
-                Внедрение курса по мотивации снизило общий уровень тревожности на{' '}
-                <span className="font-semibold text-zharyq-orange">12%</span> за месяц.
+                Доступных студентов на платформе: <span className="font-semibold text-zharyq-orange">{dashboard?.total_students || 0}</span> чел.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-zharyq-border p-3">
-                <p className="text-[11px] text-zharyq-gray mb-1">Снижение пропусков</p>
-                <p className="text-lg font-semibold">-8.6%</p>
+              <div className="rounded-xl border border-zharyq-border p-3 bg-white">
+                <p className="text-[11px] text-zharyq-gray mb-1">Вовлеченность</p>
+                <p className="text-lg font-semibold">{dashboard?.engagement_rate ? `${dashboard.engagement_rate}%` : '-'}</p>
               </div>
-              <div className="rounded-xl border border-zharyq-border p-3">
-                <p className="text-[11px] text-zharyq-gray mb-1">Вовлеченность родителей</p>
-                <p className="text-lg font-semibold">+15%</p>
+              <div className="rounded-xl border border-zharyq-border p-3 bg-white">
+                <p className="text-[11px] text-zharyq-gray mb-1">Индекс</p>
+                <p className="text-lg font-semibold text-emerald-600">{dashboard?.wellbeing_index ? dashboard.wellbeing_index : '-'}</p>
               </div>
             </div>
           </article>
