@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-from .models import UserRole, RiskLevel
+from .models import UserRole, RiskLevel, CourseStatus, ModuleType, PracticeType
 
 
 class UserRegister(BaseModel):
@@ -133,20 +133,105 @@ class NoteOut(NoteCreate):
         from_attributes = True
 
 
+# ── Course Builder schemas ────────────────────────────────────
+
+class TheoryModuleOut(BaseModel):
+    id: int
+    module_id: int
+    video_url: Optional[str] = None
+    lesson_title: Optional[str] = None
+    article_content: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TheoryModuleUpdate(BaseModel):
+    video_url: Optional[str] = None
+    lesson_title: Optional[str] = None
+    article_content: Optional[str] = None
+
+
+class PracticeModuleOut(BaseModel):
+    id: int
+    module_id: int
+    practice_type: PracticeType
+    prompt: Optional[str] = None
+    ai_enabled: bool
+    breath_duration_minutes: int
+
+    class Config:
+        from_attributes = True
+
+
+class PracticeModuleUpdate(BaseModel):
+    practice_type: Optional[PracticeType] = None
+    prompt: Optional[str] = None
+    ai_enabled: Optional[bool] = None
+    breath_duration_minutes: Optional[int] = None
+
+
+class CourseModuleOut(BaseModel):
+    id: int
+    course_id: int
+    position: int
+    module_type: ModuleType
+    theory: Optional[TheoryModuleOut] = None
+    practice: Optional[PracticeModuleOut] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CourseModuleCreate(BaseModel):
+    module_type: ModuleType
+    position: Optional[int] = None
+
+
 class CourseCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    cover_image_url: Optional[str] = None
+    created_by_id: Optional[int] = None
+
+
+class CourseUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    cover_image_url: Optional[str] = None
+    status: Optional[CourseStatus] = None
+
+
+class CourseOut(BaseModel):
+    id: int
     slug: str
     title: str
-    description: str
-    category: str
-    content_type: str
-    duration_minutes: int
-    total_lessons: int
-
-
-class CourseOut(CourseCreate):
-    id: int
-    is_active: bool
+    description: Optional[str] = None
+    category: Optional[str] = None
+    cover_image_url: Optional[str] = None
+    status: CourseStatus
+    created_by_id: Optional[int] = None
     created_at: datetime
+    module_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class CourseDetail(BaseModel):
+    id: int
+    slug: str
+    title: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    cover_image_url: Optional[str] = None
+    status: CourseStatus
+    created_by_id: Optional[int] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    modules: List[CourseModuleOut] = []
 
     class Config:
         from_attributes = True
@@ -155,7 +240,7 @@ class CourseOut(CourseCreate):
 class CourseProgressCreate(BaseModel):
     user_id: int
     course_id: int
-    lessons_completed: int = 0
+    modules_completed: int = 0
 
 
 class CourseProgressOut(CourseProgressCreate):

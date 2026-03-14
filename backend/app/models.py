@@ -20,6 +20,21 @@ class RiskLevel(str, enum.Enum):
     critical = "critical"
 
 
+class CourseStatus(str, enum.Enum):
+    draft = "draft"
+    published = "published"
+
+
+class ModuleType(str, enum.Enum):
+    theory = "theory"
+    practice = "practice"
+
+
+class PracticeType(str, enum.Enum):
+    essay = "essay"
+    breathing = "breathing"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -124,16 +139,71 @@ class Course(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     slug = Column(String, unique=True, index=True)
-    title = Column(String)
-    description = Column(Text)
-    category = Column(String)
-    content_type = Column(String)
-    duration_minutes = Column(Integer)
-    total_lessons = Column(Integer)
-    is_active = Column(Boolean, default=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    category = Column(String, nullable=True)
+    cover_image_url = Column(String, nullable=True)
+    status = Column(Enum(CourseStatus), default=CourseStatus.draft, nullable=False)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+
+    modules = relationship(
+        "CourseModule",
+        back_populates="course",
+        cascade="all, delete-orphan",
+        order_by="CourseModule.position",
+    )
+    progress = relationship("CourseProgress", back_populates="course", cascade="all, delete-orphan")
+
+
+class CourseModule(Base):
+    __tablename__ = "course_modules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    course_id = Column(Integer, ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
+    position = Column(Integer, default=0, nullable=False)
+    module_type = Column(Enum(ModuleType), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    progress = relationship("CourseProgress", back_populates="course")
+    course = relationship("Course", back_populates="modules")
+    theory = relationship(
+        "TheoryModule",
+        back_populates="module",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    practice = relationship(
+        "PracticeModule",
+        back_populates="module",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class TheoryModule(Base):
+    __tablename__ = "theory_modules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    module_id = Column(Integer, ForeignKey("course_modules.id", ondelete="CASCADE"), unique=True, nullable=False)
+    video_url = Column(String, nullable=True)
+    lesson_title = Column(String, nullable=True)
+    article_content = Column(Text, nullable=True)
+
+    module = relationship("CourseModule", back_populates="theory")
+
+
+class PracticeModule(Base):
+    __tablename__ = "practice_modules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    module_id = Column(Integer, ForeignKey("course_modules.id", ondelete="CASCADE"), unique=True, nullable=False)
+    practice_type = Column(Enum(PracticeType), default=PracticeType.essay, nullable=False)
+    prompt = Column(Text, nullable=True)
+    ai_enabled = Column(Boolean, default=False, nullable=False)
+    breath_duration_minutes = Column(Integer, default=5, nullable=False)
+
+    module = relationship("CourseModule", back_populates="practice")
 
 
 class CourseProgress(Base):
@@ -141,8 +211,8 @@ class CourseProgress(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    course_id = Column(Integer, ForeignKey("courses.id"))
-    lessons_completed = Column(Integer, default=0)
+    course_id = Column(Integer, ForeignKey("courses.id", ondelete="CASCADE"))
+    modules_completed = Column(Integer, default=0)
     is_completed = Column(Boolean, default=False)
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)

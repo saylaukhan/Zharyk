@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Sparkles, Plus, MessageSquare, BookOpen, BarChart2, Info, Settings,
   Bell, GraduationCap, Paperclip, Mic, ArrowUp, FileText, Camera,
   ArrowLeft, Search, Video, Clock, Layers, Headphones, Activity,
   Zap, BatteryLow, Heart, Rocket, Brain, SearchX, Flame, Sun,
-  BookOpenCheck, Trophy, BarChart, User, MessageCircle
+  BookOpenCheck, Trophy, BarChart, User, MessageCircle, LogOut
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 import { Line, Radar } from 'react-chartjs-2'
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement,
@@ -17,16 +18,20 @@ import { useTheme } from '../context/ThemeContext'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend, RadialLinearScale)
 
-const COURSES = [
-  { id: 'stress', category: 'stress', title: 'управление стрессом', name: 'Управление стрессом', desc: 'Практические техники быстрого снятия напряжения и долгосрочной устойчивости.', icon: Zap, iconColor: 'text-zharyq-orange', bg: 'bg-orange-50', tag: 'Стресс', tagColor: 'text-zharyq-orange', tagBg: 'bg-white', type: 'Видео', duration: '25 мин', lessons: 5, done: 2, progress: 40, progressColor: 'bg-zharyq-teal' },
-  { id: 'burnout', category: 'burnout', title: 'профилактика выгорания', name: 'Профилактика выгорания', desc: 'Как распознать первые признаки и восстановить ресурс до того, как станет поздно.', icon: BatteryLow, iconColor: 'text-amber-500', bg: 'bg-amber-50', tag: 'Выгорание', tagColor: 'text-amber-600', tagBg: 'bg-white', type: 'Статья', duration: '15 мин', lessons: 4, done: 0, progress: 0, progressColor: 'bg-gray-100' },
-  { id: 'emotions', category: 'emotions', title: 'эмоциональный интеллект', name: 'Эмоциональный интеллект', desc: 'Учимся называть, принимать и регулировать свои эмоции без подавления.', icon: Heart, iconColor: 'text-zharyq-teal', bg: 'bg-zharyq-teal-light', tag: 'Эмоции', tagColor: 'text-zharyq-teal', tagBg: 'bg-white', type: 'Видео', duration: '30 мин', lessons: 6, done: 6, progress: 100, progressColor: 'bg-zharyq-teal' },
-  { id: 'motivation', category: 'motivation', title: 'источники мотивации', name: 'Источники мотивации', desc: 'Как найти внутреннюю точку опоры и перестать зависеть от внешних стимулов.', icon: Rocket, iconColor: 'text-blue-500', bg: 'bg-blue-50', tag: 'Мотивация', tagColor: 'text-blue-500', tagBg: 'bg-white', type: 'Аудио', duration: '20 мин', lessons: 4, done: 1, progress: 25, progressColor: 'bg-blue-400' },
-  { id: 'anxiety', category: 'anxiety', title: 'работа с тревогой', name: 'Работа с тревогой', desc: 'КПТ-техники и дыхательные практики для снижения фонового уровня тревоги.', icon: Brain, iconColor: 'text-violet-500', bg: 'bg-violet-50', tag: 'Тревожность', tagColor: 'text-violet-500', tagBg: 'bg-white', type: 'Практика', duration: '18 мин', lessons: 5, done: 0, progress: 0, progressColor: 'bg-gray-100' },
-]
+const API = 'http://localhost:8000/api/v1'
 
-const FILTERS = ['all', 'stress', 'burnout', 'emotions', 'motivation', 'anxiety']
-const FILTER_LABELS = { all: 'Все', stress: 'Стресс', burnout: 'Выгорание', emotions: 'Эмоции', motivation: 'Мотивация', anxiety: 'Тревожность' }
+const CATEGORY_META = {
+  'Стресс': { icon: Zap, iconColor: 'text-zharyq-orange', bg: 'bg-orange-50', tagColor: 'text-zharyq-orange', progressColor: 'bg-zharyq-teal' },
+  'Выгорание': { icon: BatteryLow, iconColor: 'text-amber-500', bg: 'bg-amber-50', tagColor: 'text-amber-600', progressColor: 'bg-zharyq-teal' },
+  'Эмоции': { icon: Heart, iconColor: 'text-zharyq-teal', bg: 'bg-zharyq-teal-light', tagColor: 'text-zharyq-teal', progressColor: 'bg-zharyq-teal' },
+  'Мотивация': { icon: Rocket, iconColor: 'text-blue-500', bg: 'bg-blue-50', tagColor: 'text-blue-500', progressColor: 'bg-blue-400' },
+  'Тревожность': { icon: Brain, iconColor: 'text-violet-500', bg: 'bg-violet-50', tagColor: 'text-violet-500', progressColor: 'bg-zharyq-teal' },
+}
+
+const DEFAULT_META = { icon: BookOpen, iconColor: 'text-zharyq-gray', bg: 'bg-gray-50', tagColor: 'text-zharyq-gray', progressColor: 'bg-zharyq-teal' }
+
+const FILTERS = ['all', 'Стресс', 'Выгорание', 'Эмоции', 'Мотивация', 'Тревожность']
+const FILTER_LABELS = { all: 'Все', 'Стресс': 'Стресс', 'Выгорание': 'Выгорание', 'Эмоции': 'Эмоции', 'Мотивация': 'Мотивация', 'Тревожность': 'Тревожность' }
 
 const TEST_HISTORY = [
   { date: '13 мар 2025', test: 'Уровень стресса', result: 'Средний', resultClass: 'text-amber-600 bg-amber-50 border-amber-100', rec: 'Курс «Управление стрессом»' },
@@ -45,13 +50,47 @@ function getChartColors(isDark) {
 
 export default function StudentApp() {
   const { isDark } = useTheme()
+  const { logout, user } = useAuth()
+  const navigate = useNavigate()
+  const displayName = user?.username || 'Пользователь'
+  const displayClass = user?.class_name || null
   const [view, setView] = useState('chat')
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [apiCourses, setApiCourses] = useState([])
+  const [coursesLoading, setCoursesLoading] = useState(false)
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
+  const accountMenuRef = useRef(null)
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target)) {
+        setAccountMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    if (view === 'courses') {
+      setCoursesLoading(true)
+      fetch(`${API}/courses/`)
+        .then(r => r.json())
+        .then(data => setApiCourses(data))
+        .catch(console.error)
+        .finally(() => setCoursesLoading(false))
+    }
+  }, [view])
+
+  const handleLogout = () => {
+    logout()
+    navigate('/')
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -88,9 +127,9 @@ export default function StudentApp() {
     }
   }
 
-  const filteredCourses = COURSES.filter(c => {
+  const filteredCourses = apiCourses.filter(c => {
     const matchFilter = filter === 'all' || c.category === filter
-    const matchSearch = !search || c.title.includes(search.toLowerCase()) || c.name.toLowerCase().includes(search.toLowerCase())
+    const matchSearch = !search || c.title.toLowerCase().includes(search.toLowerCase())
     return matchFilter && matchSearch
   })
 
@@ -187,18 +226,42 @@ export default function StudentApp() {
             ))}
           </div>
         </div>
-        <div className="pt-4 border-t border-zharyq-border mt-4 flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-tr from-zharyq-teal to-blue-400 rounded-full relative">
-            <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
-              <div className="bg-orange-100 text-zharyq-orange text-[8px] font-bold px-1 rounded-full border border-orange-200">🔥 5</div>
+        <div className="pt-4 border-t border-zharyq-border mt-4 relative" ref={accountMenuRef}>
+          {accountMenuOpen && (
+            <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-zharyq-border rounded-xl overflow-hidden z-50">
+              <Link
+                to="/profile"
+                onClick={() => setAccountMenuOpen(false)}
+                className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-zharyq-dark hover:bg-zharyq-bg transition-colors"
+              >
+                <User size={15} className="text-zharyq-gray" />
+                Профиль
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <LogOut size={15} />
+                Выйти
+              </button>
             </div>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-zharyq-dark truncate">Асель Т.</p>
-            <p className="text-[10px] text-zharyq-gray truncate flex items-center gap-1">
-              <GraduationCap size={12} /> Старшая школа
-            </p>
-          </div>
+          )}
+          <button
+            onClick={() => setAccountMenuOpen(o => !o)}
+            className="w-full flex items-center gap-3 rounded-xl hover:bg-zharyq-bg px-2 py-1.5 transition-colors"
+          >
+            <div className="w-8 h-8 bg-gradient-to-tr from-zharyq-teal to-blue-400 rounded-full relative shrink-0">
+              <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
+                <div className="bg-orange-100 text-zharyq-orange text-[8px] font-bold px-1 rounded-full border border-orange-200">🔥 5</div>
+              </div>
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-sm font-medium text-zharyq-dark truncate">{displayName}</p>
+              <p className="text-[10px] text-zharyq-gray truncate flex items-center gap-1">
+                <GraduationCap size={12} /> {displayClass || 'Ученик'}
+              </p>
+            </div>
+          </button>
         </div>
       </aside>
 
@@ -226,7 +289,7 @@ export default function StudentApp() {
             <div id="chat-container" className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col gap-6">
               {messages.length === 0 && (
                 <div className="mt-8 mb-4 text-center max-w-lg mx-auto w-full">
-                  <h2 className="text-2xl font-semibold mb-2">Доброе утро, Асель</h2>
+                  <h2 className="text-2xl font-semibold mb-2">Доброе утро, {displayName}</h2>
                   <p className="text-zharyq-gray mb-8">Как ваш настрой перед контрольной по физике?</p>
                   <div className="flex flex-wrap justify-center gap-2">
                     <button onClick={() => sendMessage('Хочу пройти тест на уровень стресса')} className="bg-white border border-zharyq-border hover:border-zharyq-orange text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 text-zharyq-dark shadow-sm">
@@ -300,35 +363,38 @@ export default function StudentApp() {
                 ))}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {filteredCourses.length === 0 ? (
+                {coursesLoading ? (
+                  <div className="col-span-2 text-center py-16 text-zharyq-gray text-sm">Загрузка...</div>
+                ) : filteredCourses.length === 0 ? (
                   <div className="col-span-2 text-center py-16 text-zharyq-gray">
                     <SearchX size={32} className="mx-auto mb-3 opacity-40" />
                     <p className="text-sm">Ничего не найдено</p>
                   </div>
-                ) : filteredCourses.map(c => (
-                  <div key={c.id} className="course-card border border-zharyq-border rounded-2xl overflow-hidden hover:border-zharyq-gray transition-colors cursor-pointer group">
-                    <div className={`h-28 ${c.bg} flex items-center justify-center relative`}>
-                      <div className="w-12 h-12 rounded-xl opacity-10 absolute inset-0 m-auto" />
-                      <c.icon size={24} className={c.iconColor} />
-                      <span className={`absolute top-3 right-3 text-[10px] font-semibold ${c.tagColor} ${c.tagBg} border border-zharyq-border px-2 py-0.5 rounded-full`}>{c.tag}</span>
-                    </div>
-                    <div className="p-4">
-                      <h4 className={`text-sm font-semibold mb-1 group-hover:${c.iconColor} transition-colors`}>{c.name}</h4>
-                      <p className="text-xs text-zharyq-gray mb-3">{c.desc}</p>
-                      <div className="flex items-center gap-3 text-[11px] text-zharyq-gray mb-3">
-                        <span className="flex items-center gap-1"><Video size={12} /> {c.type}</span>
-                        <span className="flex items-center gap-1"><Clock size={12} /> {c.duration}</span>
-                        <span className="flex items-center gap-1"><Layers size={12} /> {c.lessons} уроков</span>
+                ) : filteredCourses.map(c => {
+                  const meta = CATEGORY_META[c.category] || DEFAULT_META
+                  const IconComp = meta.icon
+                  return (
+                    <div key={c.id} className="course-card border border-zharyq-border rounded-2xl overflow-hidden hover:border-zharyq-gray transition-colors cursor-pointer group">
+                      <div className={`h-28 ${meta.bg} flex items-center justify-center relative`}>
+                        <IconComp size={24} className={meta.iconColor} />
+                        <span className={`absolute top-3 right-3 text-[10px] font-semibold ${meta.tagColor} bg-white border border-zharyq-border px-2 py-0.5 rounded-full`}>{c.category}</span>
                       </div>
-                      <div className="w-full bg-gray-100 rounded-full h-1 mb-1">
-                        <div className={`${c.progressColor} h-1 rounded-full transition-all`} style={{ width: `${c.progress}%` }} />
+                      <div className="p-4">
+                        <h4 className="text-sm font-semibold mb-1">{c.title}</h4>
+                        <p className="text-xs text-zharyq-gray mb-3">{c.description}</p>
+                        <div className="flex items-center gap-3 text-[11px] text-zharyq-gray mb-3">
+                          <span className="flex items-center gap-1"><Video size={12} /> {c.content_type}</span>
+                          <span className="flex items-center gap-1"><Clock size={12} /> {c.duration_minutes} мин</span>
+                          <span className="flex items-center gap-1"><Layers size={12} /> {c.total_lessons} уроков</span>
+                        </div>
+                        <div className="w-full bg-gray-100 rounded-full h-1 mb-1">
+                          <div className={`${meta.progressColor} h-1 rounded-full`} style={{ width: '0%' }} />
+                        </div>
+                        <p className="text-[10px] text-zharyq-gray text-right">Не начато</p>
                       </div>
-                      <p className="text-[10px] text-zharyq-gray text-right">
-                        {c.progress === 100 ? 'Завершено ✓' : c.progress === 0 ? 'Не начато' : `${c.done} из ${c.lessons} уроков`}
-                      </p>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </div>

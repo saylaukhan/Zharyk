@@ -1,8 +1,9 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Sparkles, ShieldCheck, Bell, Users, Calendar, FileText, LogOut,
-  Search, AlertTriangle, Activity, CheckCircle, X, Plus
+  Search, AlertTriangle, Activity, CheckCircle, X, Plus, BookOpen,
+  Pencil, Trash2, Clock, Layers, Video
 } from 'lucide-react'
 import { Radar } from 'react-chartjs-2'
 import {
@@ -11,8 +12,22 @@ import {
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
+import { useAuth } from '../context/AuthContext'
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
+
+const API = 'http://localhost:8000/api/v1'
+
+const CATEGORIES = ['Стресс', 'Выгорание', 'Тревожность', 'Эмоции', 'Мотивация']
+const CONTENT_TYPES = ['Видео', 'Практика', 'Статья']
+
+const CATEGORY_STYLES = {
+  'Стресс': { tag: 'text-orange-600 bg-orange-50 border-orange-200' },
+  'Выгорание': { tag: 'text-amber-600 bg-amber-50 border-amber-200' },
+  'Тревожность': { tag: 'text-violet-600 bg-violet-50 border-violet-200' },
+  'Эмоции': { tag: 'text-teal-600 bg-teal-50 border-teal-200' },
+  'Мотивация': { tag: 'text-blue-600 bg-blue-50 border-blue-200' },
+}
 
 const ALERTS = [
   { id: '12', anon: 'Аноним #12', class: '10А', type: 'Высокий стресс', level: 'Критический', time: 'Только что', levelClass: 'text-red-600 bg-red-50 border-red-100', dot: 'bg-red-500', avatarBg: 'bg-red-100', avatarColor: 'text-red-500' },
@@ -41,20 +56,134 @@ const NOTES = [
   { id: '5', avatarBg: 'bg-amber-100', avatarColor: 'text-amber-600', date: '10 мар 2025', text: 'Признаки профессионального выгорания. Потеря интереса к учёбе, сонливость, раздражительность. Назначен курс «Профилактика выгорания». Следующая встреча через 5 дней.', tags: [{ label: 'Выгорание', cls: 'text-amber-600 bg-amber-50 border border-amber-100' }] },
 ]
 
+const EMPTY_FORM = {
+  title: '',
+  description: '',
+  category: 'Стресс',
+  content_type: 'Видео',
+  duration_minutes: 30,
+  total_lessons: 5,
+  questions: '',
+}
+
 export default function Psychologist() {
   const { isDark } = useTheme()
+  const { logout } = useAuth()
+  const navigate = useNavigate()
   const [view, setView] = useState('alerts')
   const [profileOpen, setProfileOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
 
-  const titles = { alerts: ['Алерты', 'Учащиеся, требующие внимания'], users: ['Мои подопечные', 'Назначенные учащиеся'], sessions: ['Сессии', 'Запланированные встречи'], notes: ['Заметки', 'Клинические записи'] }
+  const [courses, setCourses] = useState([])
+  const [coursesLoading, setCoursesLoading] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingCourse, setEditingCourse] = useState(null)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
+
+  const titles = {
+    alerts: ['Алерты', 'Учащиеся, требующие внимания'],
+    users: ['Мои подопечные', 'Назначенные учащиеся'],
+    sessions: ['Сессии', 'Запланированные встречи'],
+    notes: ['Заметки', 'Клинические записи'],
+    courses: ['Управление курсами', 'Создание и редактирование курсов'],
+  }
 
   const navItems = [
     { id: 'alerts', icon: Bell, label: 'Алерты', badge: 3 },
     { id: 'users', icon: Users, label: 'Мои подопечные' },
     { id: 'sessions', icon: Calendar, label: 'Сессии' },
     { id: 'notes', icon: FileText, label: 'Заметки' },
+    { id: 'courses', icon: BookOpen, label: 'Курсы' },
   ]
+
+  const fetchCourses = async () => {
+    setCoursesLoading(true)
+    try {
+      const res = await fetch(`${API}/courses/`)
+      const data = await res.json()
+      setCourses(data)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setCoursesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (view === 'courses') fetchCourses()
+  }, [view])
+
+  const openCreate = () => {
+    setEditingCourse(null)
+    setForm(EMPTY_FORM)
+    setModalOpen(true)
+  }
+
+  const openEdit = (course) => {
+    setEditingCourse(course)
+    setForm({
+      title: course.title,
+      description: course.description,
+      category: course.category,
+      content_type: course.content_type,
+      duration_minutes: course.duration_minutes,
+      total_lessons: course.total_lessons,
+      questions: course.questions || '',
+    })
+    setModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setEditingCourse(null)
+    setForm(EMPTY_FORM)
+  }
+
+  const handleSave = async () => {
+    if (!form.title.trim() || !form.description.trim()) return
+    setSaving(true)
+    try {
+      const payload = {
+        ...form,
+        duration_minutes: Number(form.duration_minutes),
+        total_lessons: Number(form.total_lessons),
+      }
+      let res
+      if (editingCourse) {
+        res = await fetch(`${API}/courses/${editingCourse.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      } else {
+        res = await fetch(`${API}/courses/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      }
+      if (res.ok) {
+        closeModal()
+        fetchCourses()
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (id) => {
+    try {
+      await fetch(`${API}/courses/${id}`, { method: 'DELETE' })
+      setDeleteConfirm(null)
+      fetchCourses()
+    } catch (e) {
+      console.error(e)
+    }
+  }
 
   const openProfile = (id) => {
     setSelectedUser(id)
@@ -127,9 +256,16 @@ export default function Psychologist() {
             <p className="text-sm font-medium truncate">Айгуль К.</p>
             <p className="text-[10px] text-zharyq-gray flex items-center gap-1"><ShieldCheck size={12} /> Психолог</p>
           </div>
-          <Link to="/app" className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title="Выйти">
+          <button 
+            onClick={() => {
+              logout()
+              navigate('/')
+            }} 
+            className="text-zharyq-gray hover:text-zharyq-dark transition-colors" 
+            title="Выйти"
+          >
             <LogOut size={16} />
-          </Link>
+          </button>
         </div>
       </aside>
 
@@ -141,13 +277,22 @@ export default function Psychologist() {
             <p className="text-xs text-zharyq-gray mt-0.5">{titles[view][1]}</p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
-              <input type="text" placeholder="Поиск…" className="border border-zharyq-border rounded-xl pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52" />
-            </div>
-            <select className="border border-zharyq-border rounded-xl px-3 py-2 text-sm bg-white text-zharyq-gray focus:ring-0 cursor-pointer">
-              <option>Все классы</option><option>10А</option><option>10Б</option><option>11А</option>
-            </select>
+            {view !== 'courses' && (
+              <>
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
+                  <input type="text" placeholder="Поиск…" className="border border-zharyq-border rounded-xl pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52" />
+                </div>
+                <select className="border border-zharyq-border rounded-xl px-3 py-2 text-sm bg-white text-zharyq-gray focus:ring-0 cursor-pointer">
+                  <option>Все классы</option><option>10А</option><option>10Б</option><option>11А</option>
+                </select>
+              </>
+            )}
+            {view === 'courses' && (
+              <button onClick={() => navigate('/course-builder')} className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-xl transition-colors" style={{ background: 'var(--color-accent)' }}>
+                <Plus size={16} /> Создать курс
+              </button>
+            )}
           </div>
         </header>
 
@@ -326,6 +471,78 @@ export default function Psychologist() {
             </div>
           </div>
         )}
+
+        {/* COURSES VIEW */}
+        {view === 'courses' && (
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="max-w-4xl mx-auto">
+              {coursesLoading ? (
+                <div className="flex items-center justify-center py-20 text-zharyq-gray text-sm">Загрузка...</div>
+              ) : courses.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3 text-zharyq-gray">
+                  <BookOpen size={36} className="opacity-30" />
+                  <p className="text-sm">Курсов пока нет. Создайте первый!</p>
+                  <button onClick={() => navigate('/course-builder')} className="text-sm font-medium text-white px-4 py-2 rounded-xl mt-2" style={{ background: 'var(--color-accent)' }}>
+                    <Plus size={14} className="inline mr-1" /> Создать курс
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {courses.map(c => {
+                    const tagStyle = CATEGORY_STYLES[c.category] || { tag: 'text-gray-600 bg-gray-50 border-gray-200' }
+                    const isDraft = c.status === 'draft'
+                    return (
+                      <div key={c.id} className="course-card border border-zharyq-border rounded-2xl overflow-hidden hover:border-zharyq-gray transition-colors group">
+                        <div className="h-24 bg-zharyq-bg flex items-center justify-center relative">
+                          {c.cover_image_url
+                            ? <img src={c.cover_image_url} alt="" className="w-full h-full object-cover" />
+                            : <BookOpen size={28} className="text-zharyq-gray opacity-20" />
+                          }
+                          <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
+                            {c.category && (
+                              <span className={`text-[10px] font-semibold border px-2 py-0.5 rounded-full ${tagStyle.tag}`}>{c.category}</span>
+                            )}
+                            <span className={`ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full border ${isDraft ? 'text-zharyq-gray bg-white border-zharyq-border' : 'text-teal-700 bg-teal-50 border-teal-200'}`}>
+                              {isDraft ? 'Черновик' : 'Опубликован'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="p-4">
+                          <h4 className="text-sm font-semibold mb-1 truncate">{c.title}</h4>
+                          <p className="text-xs text-zharyq-gray mb-3 line-clamp-2">{c.description || 'Описание не добавлено'}</p>
+                          <div className="flex items-center gap-3 text-[11px] text-zharyq-gray mb-4">
+                            <span className="flex items-center gap-1"><Layers size={11} /> {c.module_count} {c.module_count === 1 ? 'модуль' : c.module_count < 5 ? 'модуля' : 'модулей'}</span>
+                          </div>
+                          <div className="flex items-center gap-2 pt-2 border-t border-zharyq-border">
+                            <button
+                              onClick={() => navigate(`/course-builder?id=${c.id}`)}
+                              className="flex items-center gap-1.5 text-xs font-medium text-zharyq-gray hover:text-zharyq-orange transition-colors px-2 py-1 rounded-lg hover:bg-orange-50"
+                            >
+                              <Pencil size={12} /> Редактировать
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirm(c)}
+                              className="flex items-center gap-1.5 text-xs font-medium text-zharyq-gray hover:text-red-500 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 ml-auto"
+                            >
+                              <Trash2 size={12} /> Удалить
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <div
+                    onClick={() => navigate('/course-builder')}
+                    className="border border-dashed border-zharyq-border rounded-2xl p-4 hover:border-zharyq-orange transition-colors cursor-pointer opacity-60 hover:opacity-100 flex flex-col items-center justify-center gap-2 text-zharyq-gray hover:text-zharyq-orange min-h-[220px]"
+                  >
+                    <Plus size={24} />
+                    <span className="text-xs">Создать курс</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* PROFILE DRAWER */}
@@ -374,6 +591,125 @@ export default function Psychologist() {
           </button>
         </div>
       </aside>
+
+      {/* COURSE MODAL */}
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zharyq-border">
+              <h2 className="text-sm font-semibold">{editingCourse ? 'Редактировать курс' : 'Создать курс'}</h2>
+              <button onClick={closeModal} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><X size={20} /></button>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Название</label>
+                <input
+                  type="text"
+                  value={form.title}
+                  onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                  placeholder="Управление стрессом"
+                  className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Описание</label>
+                <textarea
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="Краткое описание курса..."
+                  rows={3}
+                  className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Категория</label>
+                  <select
+                    value={form.category}
+                    onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                    className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                  >
+                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Тип контента</label>
+                  <select
+                    value={form.content_type}
+                    onChange={e => setForm(f => ({ ...f, content_type: e.target.value }))}
+                    className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                  >
+                    {CONTENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Время прохождения (мин)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={form.duration_minutes}
+                    onChange={e => setForm(f => ({ ...f, duration_minutes: e.target.value }))}
+                    className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Количество уроков</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={form.total_lessons}
+                    onChange={e => setForm(f => ({ ...f, total_lessons: e.target.value }))}
+                    className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Вопросы курса</label>
+                <textarea
+                  value={form.questions}
+                  onChange={e => setForm(f => ({ ...f, questions: e.target.value }))}
+                  placeholder="Введите вопросы курса (каждый с новой строки)..."
+                  rows={4}
+                  className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none resize-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={closeModal} className="flex-1 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-gray bg-white hover:bg-zharyq-bg transition-colors">
+                  Отмена
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !form.title.trim() || !form.description.trim()}
+                  className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
+                  style={{ background: 'var(--color-accent)' }}
+                >
+                  {saving ? 'Сохранение...' : editingCourse ? 'Сохранить' : 'Создать'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRM */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <h2 className="text-sm font-semibold mb-2">Удалить курс?</h2>
+            <p className="text-xs text-zharyq-gray mb-5">«{deleteConfirm.title}» будет удалён без возможности восстановления.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)} className="flex-1 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-gray hover:bg-zharyq-bg transition-colors">
+                Отмена
+              </button>
+              <button onClick={() => handleDelete(deleteConfirm.id)} className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors">
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

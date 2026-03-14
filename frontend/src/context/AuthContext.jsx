@@ -21,10 +21,20 @@ export function AuthProvider({ children }) {
       throw new Error(err.detail || 'Ошибка входа')
     }
     const data = await res.json()
+    const meRes = await fetch(`${API}/auth/me`, {
+      headers: { Authorization: `Bearer ${data.access_token}` },
+    })
+    const me = meRes.ok ? await meRes.json() : {}
+    const userInfo = {
+      id: data.user_id,
+      role: data.role,
+      username: me.username || username,
+      class_name: me.class_name || null,
+    }
     localStorage.setItem('token', data.access_token)
-    localStorage.setItem('user', JSON.stringify({ id: data.user_id, role: data.role }))
+    localStorage.setItem('user', JSON.stringify(userInfo))
     setToken(data.access_token)
-    setUser({ id: data.user_id, role: data.role })
+    setUser(userInfo)
     return data.role
   }, [])
 
