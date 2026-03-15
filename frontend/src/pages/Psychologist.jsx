@@ -1,23 +1,47 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Search, AlertTriangle, Activity, CheckCircle, X, Plus,
   ClipboardList, Clock, Layers, Zap, Brain, BatteryLow, 
-  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles, Pencil, Trash2, BookOpen
+  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles, Pencil, Trash2, BookOpen, Eye, Edit3
 } from 'lucide-react'
 import { Radar } from 'react-chartjs-2'
 import {
   Chart as ChartJS, RadialLinearScale, PointElement, LineElement,
   Filler, Tooltip, Legend
 } from 'chart.js'
+import { Calendar as BigCalendar, dateFnsLocalizer } from 'react-big-calendar'
+import { format, parse, startOfWeek, getDay } from 'date-fns'
+import { ru } from 'date-fns/locale'
+import 'react-big-calendar/lib/css/react-big-calendar.css'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { 
-  fetchAlertsRich, fetchStudentsWithMetrics, fetchSessions, fetchNotes, fetchUserTestResults, fetchTests 
+  fetchAlertsRich, fetchStudentsWithMetrics, fetchSessions, fetchNotes, fetchUserTestResults, fetchTests,
+  createSession, updateSession, deleteSession
 } from '../api/api'
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
+
+const locales = { 'ru': ru }
+const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales })
+
+const calendarMessages = {
+  allDay: 'Весь день',
+  previous: 'Назад',
+  next: 'Вперёд',
+  today: 'Сегодня',
+  month: 'Месяц',
+  week: 'Неделя',
+  day: 'День',
+  agenda: 'Список',
+  date: 'Дата',
+  time: 'Время',
+  event: 'Событие',
+  noEventsInRange: 'Нет событий в этом диапазоне.',
+  showMore: (total) => `+ ещё ${total}`,
+}
 
 // Helpers
 function timeAgo(dateString) {
@@ -98,6 +122,20 @@ export default function Psychologist() {
   const [saving, setSaving] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [userTestResults, setUserTestResults] = useState([])
+
+  // Session calendar state
+  const [calendarView, setCalendarView] = useState('month')
+  const [calendarDate, setCalendarDate] = useState(new Date())
+  const [sessionModalOpen, setSessionModalOpen] = useState(false)
+  const [sessionModalMode, setSessionModalMode] = useState('create') // create | view | edit
+  const [selectedSession, setSelectedSession] = useState(null)
+  const [sessionForm, setSessionForm] = useState({
+    user_id: '', title: '', notes: '', scheduled_date: '', scheduled_time: '',
+    duration_minutes: 50, session_type: 'individual'
+  })
+  const [sessionSaving, setSessionSaving] = useState(false)
+  const [sessionDeleteConfirm, setSessionDeleteConfirm] = useState(false)
+  const [preselectedStudentId, setPreselectedStudentId] = useState(null)
   const [psyTests, setPsyTests] = useState([])
   const [psyTestsLoading, setPsyTestsLoading] = useState(false)
 
@@ -116,6 +154,15 @@ export default function Psychologist() {
     })
   }, [])
 
+  // Reload sessions when switching to sessions view
+  const reloadSessions = useCallback(() => {
+    fetchSessions().then(setSessions).catch(console.error)
+  }, [])
+
+  useEffect(() => {
+    if (view === 'sessions') reloadSessions()
+  }, [view, reloadSessions])
+
   // Load tests dynamically when 'tests' view is opened
   useEffect(() => {
     if (view === 'tests' && psyTests.length === 0) {
@@ -126,6 +173,88 @@ export default function Psychologist() {
         .finally(() => setPsyTestsLoading(false))
     }
   }, [view, psyTests.length])
+
+  // Session calendar events
+  const calendarEvents = useMemo(() => sessions.map(s => {
+    const start = new Date(s.scheduled_at)
+    const end = new Date(start.getTime() + (s.duration_minutes || 50) * 60000)
+    return { id: s.id, title: s.title, start, end, resource: s }
+  }), [sessions])
+
+  const openSessionCreate = (slotInfo) => {
+    const d = slotInfo?.start || new Date()
+    const dateStr = format(d, 'yyyy-MM-dd')
+    const timeStr = format(d, 'HH:mm')
+    setSessionForm({
+      user_id: preselectedStudentId || '', title: '', notes: '',
+      scheduled_date: dateStr, scheduled_time: timeStr,
+      duration_minutes: 50, session_type: 'individual'
+    })
+    setSelectedSession(null)
+    setSessionModalMode('create')
+    setSessionModalOpen(true)
+    setSessionDeleteConfirm(false)
+  }
+
+  const openSessionView = (event) => {
+    const s = event.resource
+    const start = new Date(s.scheduled_at)
+    setSelectedSession(s)
+    setSessionForm({
+      user_id: s.user_id, title: s.title, notes: s.notes || '',
+      scheduled_date: format(start, 'yyyy-MM-dd'),
+      scheduled_time: format(start, 'HH:mm'),
+      duration_minutes: s.duration_minutes || 50,
+      session_type: s.session_type || 'individual'
+    })
+    setSessionModalMode('view')
+    setSessionModalOpen(true)
+    setSessionDeleteConfirm(false)
+  }
+
+  const switchToEdit = () => setSessionModalMode('edit')
+
+  const handleSessionSave = async () => {
+    if (!sessionForm.user_id || !sessionForm.title.trim() || !sessionForm.scheduled_date || !sessionForm.scheduled_time) return
+    setSessionSaving(true)
+    try {
+      const scheduled_at = new Date(`${sessionForm.scheduled_date}T${sessionForm.scheduled_time}:00`).toISOString()
+      const payload = {
+        user_id: Number(sessionForm.user_id),
+        psychologist_id: authUser?.user_id || authUser?.id,
+        title: sessionForm.title,
+        notes: sessionForm.notes || null,
+        scheduled_at,
+        duration_minutes: Number(sessionForm.duration_minutes),
+        session_type: sessionForm.session_type
+      }
+      if (sessionModalMode === 'edit' && selectedSession) {
+        await updateSession(selectedSession.id, payload)
+      } else {
+        await createSession(payload)
+      }
+      setSessionModalOpen(false)
+      setPreselectedStudentId(null)
+      reloadSessions()
+    } catch (e) {
+      console.error(e)
+      alert('Ошибка при сохранении сессии: ' + e.message)
+    } finally {
+      setSessionSaving(false)
+    }
+  }
+
+  const handleSessionDelete = async () => {
+    if (!selectedSession) return
+    try {
+      await deleteSession(selectedSession.id)
+      setSessionModalOpen(false)
+      reloadSessions()
+    } catch (e) {
+      console.error(e)
+      alert('Ошибка при удалении сессии: ' + e.message)
+    }
+  }
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
@@ -494,36 +623,56 @@ export default function Psychologist() {
               </div>
             )}
 
-            {/* SESSIONS VIEW */}
+            {/* SESSIONS VIEW — FULL CALENDAR */}
             {view === 'sessions' && (
-              <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark animate-fade-in-up">
-                <div className="max-w-3xl mx-auto">
-                  <div className="border border-zharyq-border rounded-2xl overflow-hidden">
-                    <div className="px-5 py-4 border-b border-zharyq-border">
-                      <h2 className="text-sm font-semibold">Запланированные сессии</h2>
-                    </div>
-                    <div className="divide-y divide-zharyq-border">
-                      {sessions.map((s, i) => {
-                        const d = new Date(s.scheduled_at);
-                        return (
-                          <div key={i} className="flex items-center gap-4 px-5 py-4 hover:bg-zharyq-bg transition-colors">
-                            <div className={`w-10 h-10 rounded-xl bg-zharyq-teal-light flex flex-col items-center justify-center shrink-0`}>
-                              <span className={`text-[10px] text-zharyq-teal font-semibold`}>{d.toLocaleString('ru-RU', {month:'short'}).toUpperCase()}</span>
-                              <span className={`text-sm font-bold text-zharyq-teal leading-tight`}>{d.getDate()}</span>
-                            </div>
-                            <div className="flex-1">
-                              <p className="text-sm font-medium">{s.title}</p>
-                              <p className="text-xs text-zharyq-gray">{d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} · {s.session_type}</p>
-                            </div>
-                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border border-teal-100 text-teal-600 bg-teal-50`}>
-                              {s.is_completed ? 'Завершена' : 'Запланирована'}
-                            </span>
-                          </div>
-                        )
-                      })}
-                      {sessions.length === 0 && <p className="p-6 text-sm text-center text-zharyq-gray">Нет сессий</p>}
-                    </div>
-                  </div>
+              <div className="flex-1 overflow-hidden p-0 text-zharyq-dark animate-fade-in-up flex flex-col" style={{ height: 'calc(100vh - 73px)' }}>
+                <div className="flex items-center justify-between px-6 py-3 border-b border-zharyq-border shrink-0 bg-white">
+                  <p className="text-xs text-zharyq-gray">Нажмите на дату для создания сессии, или на событие для просмотра</p>
+                  <button
+                    onClick={() => openSessionCreate({ start: new Date() })}
+                    className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-xl transition-colors"
+                    style={{ background: 'var(--color-accent)' }}
+                  >
+                    <Plus size={16} /> Назначить сессию
+                  </button>
+                </div>
+                <div className="flex-1 px-4 pb-4 pt-2 overflow-auto zharyq-calendar">
+                  <BigCalendar
+                    localizer={localizer}
+                    events={calendarEvents}
+                    startAccessor="start"
+                    endAccessor="end"
+                    culture="ru"
+                    messages={calendarMessages}
+                    views={['month', 'week', 'day']}
+                    view={calendarView}
+                    onView={setCalendarView}
+                    date={calendarDate}
+                    onNavigate={setCalendarDate}
+                    selectable
+                    onSelectSlot={openSessionCreate}
+                    onSelectEvent={openSessionView}
+                    style={{ height: '100%', minHeight: '600px' }}
+                    eventPropGetter={(event) => {
+                      const s = event.resource
+                      const bg = s.is_completed ? '#14B8A6' : '#F97316'
+                      return {
+                        style: {
+                          backgroundColor: bg,
+                          borderRadius: '8px',
+                          border: 'none',
+                          color: '#fff',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          padding: '2px 6px'
+                        }
+                      }
+                    }}
+                    dayPropGetter={(date) => {
+                      const isToday = format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+                      return isToday ? { style: { backgroundColor: 'rgba(249,115,22,0.04)' } } : {}
+                    }}
+                  />
                 </div>
               </div>
             )}
@@ -760,7 +909,18 @@ export default function Psychologist() {
                   </div>
                 ))}
               </div>
-              <button className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-colors mb-5" style={{ background: 'var(--color-accent)' }}>
+              <button
+                onClick={() => {
+                  setPreselectedStudentId(selectedUser.id)
+                  closeProfile()
+                  setView('sessions')
+                  setTimeout(() => {
+                    openSessionCreate({ start: new Date() })
+                  }, 300)
+                }}
+                className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-colors mb-5"
+                style={{ background: 'var(--color-accent)' }}
+              >
                 <Calendar size={16} className="inline mr-2" />
                 Назначить сессию
               </button>
@@ -909,20 +1069,174 @@ export default function Psychologist() {
                   {saving ? 'Сохранение...' : editingCourse ? 'Сохранить' : 'Создать'}
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-3 mb-5">
-                {[{ label: 'Стресс', value: selectedUser.stress || 0, color: 'text-red-500' }, { label: 'Мотивация', value: selectedUser.motivation || 0, color: 'text-amber-500' }, { label: 'Тревожность', value: selectedUser.anxiety || 0, color: 'text-orange-500' }, { label: 'Курсов', value: selectedUser.courses_count || 0, color: 'text-blue-500' }].map(m => (
-                  <div key={m.label} className="border border-zharyq-border rounded-xl p-3">
-                    <p className="text-xs text-zharyq-gray mb-1">{m.label}</p>
-                    <div className="flex items-end gap-2">
-                      <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
-                    </div>
-                  </div>
-                ))}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SESSION MODAL */}
+      {sessionModalOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setSessionModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto text-zharyq-dark" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zharyq-border">
+              <h2 className="text-sm font-semibold">
+                {sessionModalMode === 'create' ? 'Назначить сессию' : sessionModalMode === 'edit' ? 'Редактировать сессию' : 'Просмотр сессии'}
+              </h2>
+              <button onClick={() => setSessionModalOpen(false)} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><X size={20} /></button>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              {/* Student select */}
+              <div>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Учащийся</label>
+                {sessionModalMode === 'view' ? (
+                  <p className="text-sm font-medium py-2">{selectedSession?.student_name || students.find(s => s.id === sessionForm.user_id)?.anonymous_id || `Студент #${sessionForm.user_id}`}</p>
+                ) : (
+                  <select
+                    value={sessionForm.user_id}
+                    onChange={e => setSessionForm(f => ({ ...f, user_id: e.target.value }))}
+                    className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                  >
+                    <option value="">Выберите учащегося...</option>
+                    {students.map(s => (
+                      <option key={s.id} value={s.id}>{s.anonymous_id || `Аноним #${s.id}`} — {s.class_name || 'Нет класса'}</option>
+                    ))}
+                  </select>
+                )}
               </div>
-              <button className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-colors" style={{ background: 'var(--color-accent)' }}>
-                <Calendar size={16} className="inline mr-2" />
-                Назначить сессию
-              </button>
+              {/* Title */}
+              <div>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Тема сессии</label>
+                {sessionModalMode === 'view' ? (
+                  <p className="text-sm font-medium py-2">{sessionForm.title}</p>
+                ) : (
+                  <input
+                    type="text" value={sessionForm.title}
+                    onChange={e => setSessionForm(f => ({ ...f, title: e.target.value }))}
+                    placeholder="Например: Консультация по стрессу"
+                    className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                  />
+                )}
+              </div>
+              {/* Date & Time */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Дата</label>
+                  {sessionModalMode === 'view' ? (
+                    <p className="text-sm font-medium py-2">{sessionForm.scheduled_date ? new Date(sessionForm.scheduled_date + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</p>
+                  ) : (
+                    <input
+                      type="date" value={sessionForm.scheduled_date}
+                      onChange={e => setSessionForm(f => ({ ...f, scheduled_date: e.target.value }))}
+                      className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                    />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Время</label>
+                  {sessionModalMode === 'view' ? (
+                    <p className="text-sm font-medium py-2">{sessionForm.scheduled_time || '-'}</p>
+                  ) : (
+                    <input
+                      type="time" value={sessionForm.scheduled_time}
+                      onChange={e => setSessionForm(f => ({ ...f, scheduled_time: e.target.value }))}
+                      className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                    />
+                  )}
+                </div>
+              </div>
+              {/* Duration & Type */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Длительность (мин)</label>
+                  {sessionModalMode === 'view' ? (
+                    <p className="text-sm font-medium py-2">{sessionForm.duration_minutes} мин</p>
+                  ) : (
+                    <input
+                      type="number" min={10} max={180} value={sessionForm.duration_minutes}
+                      onChange={e => setSessionForm(f => ({ ...f, duration_minutes: e.target.value }))}
+                      className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                    />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Тип</label>
+                  {sessionModalMode === 'view' ? (
+                    <p className="text-sm font-medium py-2">{sessionForm.session_type === 'individual' ? 'Индивидуальная' : sessionForm.session_type === 'group' ? 'Групповая' : sessionForm.session_type}</p>
+                  ) : (
+                    <select
+                      value={sessionForm.session_type}
+                      onChange={e => setSessionForm(f => ({ ...f, session_type: e.target.value }))}
+                      className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                    >
+                      <option value="individual">Индивидуальная</option>
+                      <option value="group">Групповая</option>
+                      <option value="consultation">Консультация</option>
+                    </select>
+                  )}
+                </div>
+              </div>
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Заметки</label>
+                {sessionModalMode === 'view' ? (
+                  <p className="text-sm py-2 text-zharyq-gray">{sessionForm.notes || 'Нет заметок'}</p>
+                ) : (
+                  <textarea
+                    value={sessionForm.notes}
+                    onChange={e => setSessionForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="Заметки к сессии..."
+                    rows={3}
+                    className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none resize-none"
+                  />
+                )}
+              </div>
+              {/* Status for view */}
+              {sessionModalMode === 'view' && selectedSession && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zharyq-gray">Статус:</span>
+                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                    selectedSession.is_completed
+                      ? 'border-teal-100 text-teal-600 bg-teal-50'
+                      : 'border-orange-100 text-orange-600 bg-orange-50'
+                  }`}>
+                    {selectedSession.is_completed ? 'Завершена' : 'Запланирована'}
+                  </span>
+                </div>
+              )}
+              {/* Buttons */}
+              <div className="flex gap-3 pt-2">
+                {sessionModalMode === 'view' ? (
+                  <>
+                    <button onClick={switchToEdit} className="flex-1 flex items-center justify-center gap-2 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-dark hover:bg-zharyq-bg transition-colors">
+                      <Edit3 size={14} /> Редактировать
+                    </button>
+                    {!sessionDeleteConfirm ? (
+                      <button onClick={() => setSessionDeleteConfirm(true)} className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center gap-2">
+                        <Trash2 size={14} /> Удалить
+                      </button>
+                    ) : (
+                      <button onClick={handleSessionDelete} className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors animate-pulse">
+                        Подтвердить удаление
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => setSessionModalOpen(false)} className="flex-1 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-gray bg-white hover:bg-zharyq-bg transition-colors">
+                      Отмена
+                    </button>
+                    <button
+                      onClick={handleSessionSave}
+                      disabled={sessionSaving || !sessionForm.title.trim() || !sessionForm.user_id || !sessionForm.scheduled_date || !sessionForm.scheduled_time}
+                      className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
+                      style={{ background: 'var(--color-accent)' }}
+                    >
+                      {sessionSaving ? 'Сохранение...' : sessionModalMode === 'edit' ? 'Сохранить' : 'Назначить'}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>

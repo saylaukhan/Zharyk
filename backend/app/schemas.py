@@ -109,10 +109,21 @@ class SessionCreate(BaseModel):
     session_type: str = "individual"
 
 
+class SessionUpdate(BaseModel):
+    user_id: Optional[int] = None
+    title: Optional[str] = None
+    notes: Optional[str] = None
+    scheduled_at: Optional[datetime] = None
+    duration_minutes: Optional[int] = None
+    session_type: Optional[str] = None
+    is_completed: Optional[bool] = None
+
+
 class SessionOut(SessionCreate):
     id: int
     is_completed: bool
     created_at: datetime
+    student_name: Optional[str] = None
 
     class Config:
         from_attributes = True
