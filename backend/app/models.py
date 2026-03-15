@@ -265,6 +265,31 @@ class OrgMetric(Base):
     recorded_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    title = Column(String, default="Новый чат", nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User")
+    messages = relationship("ChatHistory", back_populates="session", cascade="all, delete-orphan")
+
+
+class ChatHistory(Base):
+    __tablename__ = "chat_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    session_id = Column(Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=True)
+    role = Column(String, nullable=False)  # "user" | "assistant"
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User")
+    session = relationship("ChatSession", back_populates="messages")
 # ── Testing system ────────────────────────────────────────────
 
 class Test(Base):

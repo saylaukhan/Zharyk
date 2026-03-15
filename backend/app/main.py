@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .database import engine, Base
-from .routers import users, checkins, alerts, sessions, analytics, courses, notes, auth, tests
+from .routers import users, checkins, alerts, sessions, analytics, courses, notes, auth, tests, ai_chat
 
 # Drop old course tables and recreate with new schema
 _MIGRATION_TABLES = [
@@ -54,6 +54,7 @@ app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(courses.router, prefix="/api/v1")
 app.include_router(notes.router, prefix="/api/v1")
+app.include_router(ai_chat.router, prefix="/api/v1")
 app.include_router(tests.router, prefix="/api/v1")
 
 

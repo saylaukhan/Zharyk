@@ -5,7 +5,7 @@ import {
   Bell, GraduationCap, Paperclip, Mic, ArrowUp, FileText, Camera,
   ArrowLeft, Search, Video, Clock, Layers, Headphones, Activity,
   Zap, BatteryLow, Heart, Rocket, Brain, SearchX, Flame, Sun,
-  BookOpenCheck, Trophy, BarChart, User, MessageCircle, ClipboardList, LogOut,
+  BookOpenCheck, Trophy, BarChart, User, MessageCircle, ClipboardList, LogOut, Edit2, Trash2, Check, X,
   ChevronRight, ChevronLeft, CheckCircle, Target, Shield, AlertTriangle
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -58,7 +58,7 @@ function getChartColors(isDark) {
 export default function StudentApp() {
   const navigate = useNavigate()
   const { isDark } = useTheme()
-  const { user: authUser, logout } = useAuth()
+  const { user: authUser, logout, token } = useAuth()
   const [view, setView] = useState('chat')
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -68,6 +68,14 @@ export default function StudentApp() {
   const [apiCourses, setApiCourses] = useState([])
   const [coursesLoading, setCoursesLoading] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [aiRecommendations, setAiRecommendations] = useState([])
+  const [chatSessions, setChatSessions] = useState([])
+  const [currentSessionId, setCurrentSessionId] = useState(null)
+  const [editingSessionId, setEditingSessionId] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [deleteConfirmSession, setDeleteConfirmSession] = useState(null)
+  const eventSourceRef = useRef(null)
 
   // ── Test state ──
   const [availableTests, setAvailableTests] = useState([])
@@ -179,10 +187,53 @@ export default function StudentApp() {
   useEffect(() => {
     if (authUser?.id) {
       fetchUserMetrics(authUser.id)
-        .then(setMetrics)
+        .then(data => {
+          const sorted = [...data].sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at));
+          setMetrics(sorted);
+        })
         .catch(console.error)
     }
   }, [authUser])
+
+  // Load chat history on mount
+  useEffect(() => {
+    if (!authUser?.id) return
+    fetch(`${API}/ai/chat/sessions/${authUser.id}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(sessions => {
+        setChatSessions(sessions)
+        if (sessions.length > 0) {
+          loadSession(sessions[0].id)
+        }
+      })
+      .catch(console.error)
+  }, [authUser])
+
+  const loadSession = (sessionId) => {
+    if (isStreaming) return
+    setCurrentSessionId(sessionId)
+    fetch(`${API}/ai/chat/history/${sessionId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(history => {
+        setMessages(history.map(h => ({
+          role: h.role === 'assistant' ? 'ai' : 'user',
+          text: h.content,
+        })))
+        setView('chat')
+      })
+      .catch(console.error)
+  }
+
+  const refreshMetrics = () => {
+    if (authUser?.id) {
+      fetchUserMetrics(authUser.id)
+        .then(data => {
+          const sorted = [...data].sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at));
+          setMetrics(sorted);
+        })
+        .catch(console.error)
+    }
+  }
 
   const navItems = [
     { id: 'chat', icon: MessageSquare, label: 'AI-Ассистент' },
@@ -191,22 +242,172 @@ export default function StudentApp() {
     { id: 'analytics', icon: BarChart2, label: 'Моя аналитика' },
   ]
 
-  const sendMessage = (text) => {
+  const sendMessage = async (text) => {
     const msg = text || input.trim()
-    if (!msg) return
-    setMessages(prev => [...prev, { role: 'user', text: msg }])
+    if (!msg || isStreaming) return
     setInput('')
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
-        role: 'ai',
-        text: 'Я слышу вас. Расскажите подробнее — что именно вас беспокоит прямо сейчас?'
-      }])
-    }, 1200)
+
+    let activeSessionId = currentSessionId
+    if (!activeSessionId) {
+      try {
+        const res = await fetch(`${API}/ai/chat/sessions?user_id=${authUser?.id || 1}`, { method: 'POST' })
+        if (res.ok) {
+          const newSession = await res.json()
+          setChatSessions(prev => [newSession, ...prev])
+          setCurrentSessionId(newSession.id)
+          activeSessionId = newSession.id
+        }
+      } catch (e) {
+        console.error(e)
+        return
+      }
+    }
+
+    // Add user message immediately
+    setMessages(prev => [...prev, { role: 'user', text: msg }])
+
+    // Add empty AI bubble that will be filled via SSE
+    setMessages(prev => [...prev, { role: 'ai', text: '', streaming: true }])
+    setIsStreaming(true)
+
+    const url = `${API}/ai/chat/stream?user_id=${authUser?.id || 1}&session_id=${activeSessionId}&message=${encodeURIComponent(msg)}`
+    const es = new EventSource(url)
+    eventSourceRef.current = es
+
+    es.onmessage = (event) => {
+      if (event.data === '[DONE]') {
+        es.close()
+        setIsStreaming(false)
+        // Mark last AI message as no longer streaming
+        setMessages(prev => prev.map((m, i) =>
+          i === prev.length - 1 && m.role === 'ai' ? { ...m, streaming: false } : m
+        ))
+        refreshMetrics()
+        return
+      }
+      try {
+        const payload = JSON.parse(event.data)
+        if (payload.type === 'token') {
+          setMessages(prev => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last && last.role === 'ai') {
+              updated[updated.length - 1] = { ...last, text: last.text + payload.content }
+            }
+            return updated
+          })
+        } else if (payload.type === 'profile_updated') {
+          const m = payload.metrics;
+          const now = new Date().toISOString();
+          // Agent 2 fired — update radar data directly without refetch
+          // Сортировка по времени для гарантии правильного порядка на графике
+          // Данные с бэкенда могут приходить от старых к новым
+          setMetrics(prev => {
+            const newArray = [
+              ...prev,
+              { stress: m.stress, burnout: m.burnout, anxiety: m.anxiety, motivation: m.motivation, emotion: m.emotion, recorded_at: now }
+            ]
+            // Отсортируем явно по дате (старые -> новые)
+            return newArray.sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at))
+          })
+
+          if (m.critical_type && m.critical_type !== 'none') {
+            setAiRecommendations(prev => [
+              { id: Date.now(), title: 'Экстренная поддержка', sub: `ИИ обнаружил тревожное состояние (${m.critical_type === 'anxiety' ? 'Тревога' : 'Выгорание'}). Рекомендуем курс по управлению состоянием.`, icon: Brain, bg: 'bg-violet-50', color: 'text-violet-500', critical: true },
+              ...prev.slice(0, 2)
+            ])
+          } else if (m.critical_type === 'none') {
+            // Remove any existing critical specific recommendations if state improved
+            setAiRecommendations(prev => prev.filter(r => !r.critical))
+          }
+        } else if (payload.type === 'error') {
+          setMessages(prev => prev.map((m, i) =>
+            i === prev.length - 1 && m.role === 'ai' ? { ...m, text: payload.content, streaming: false } : m
+          ))
+          es.close()
+          setIsStreaming(false)
+        }
+      } catch (e) {
+        console.error('SSE parse error', e)
+      }
+    }
+
+    es.onerror = () => {
+      es.close()
+      setIsStreaming(false)
+      setMessages(prev => prev.map((m, i) =>
+        i === prev.length - 1 && m.role === 'ai' && m.text === ''
+          ? { ...m, text: 'Не удалось подключиться к AI-сервису. Убедитесь, что Ollama запущена.', streaming: false }
+          : m
+      ))
+    }
   }
 
-  const resetChat = () => {
-    setMessages([])
-    setView('chat')
+  const createNewSession = async () => {
+    if (isStreaming) return
+    if (eventSourceRef.current) eventSourceRef.current.close()
+    try {
+      const res = await fetch(`${API}/ai/chat/sessions?user_id=${authUser?.id || 1}`, { method: 'POST' })
+      if (res.ok) {
+        const newSession = await res.json()
+        setChatSessions([newSession, ...chatSessions])
+        setCurrentSessionId(newSession.id)
+        setMessages([])
+        setView('chat')
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const deleteSession = (session, e) => {
+    e.stopPropagation()
+    setDeleteConfirmSession(session)
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteConfirmSession) return
+    const sessionId = deleteConfirmSession.id
+    try {
+      const res = await fetch(`${API}/ai/chat/sessions/${sessionId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setChatSessions(prev => prev.filter(s => s.id !== sessionId))
+        if (currentSessionId === sessionId) {
+          setMessages([])
+          setCurrentSessionId(null)
+        }
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setDeleteConfirmSession(null)
+    }
+  }
+
+  const startEditingSession = (sessionId, currentTitle, e) => {
+    e.stopPropagation()
+    setEditingSessionId(sessionId)
+    setEditTitle(currentTitle)
+  }
+
+  const saveEditedSession = async (sessionId, e) => {
+    e.stopPropagation()
+    try {
+      const res = await fetch(`${API}/ai/chat/sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ title: editTitle || 'Новый чат' })
+      })
+      if (res.ok) {
+        setChatSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: editTitle || 'Новый чат' } : s))
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setEditingSessionId(null)
+    }
   }
 
   const handleKeyDown = (e) => {
@@ -224,10 +425,10 @@ export default function StudentApp() {
 
   const { text: chartText, grid: chartGrid } = getChartColors(isDark)
 
-  const sortedMetrics = [...metrics].reverse();
-  const lineLabels = sortedMetrics.length ? sortedMetrics.map(m => new Date(m.recorded_at).toLocaleDateString('ru-RU')) : ['Нет данных'];
-  const dataStress = sortedMetrics.length ? sortedMetrics.map(m => m.stress) : [0];
-  const dataMotivation = sortedMetrics.length ? sortedMetrics.map(m => m.motivation) : [0];
+  // metrics теперь всегда отсортирован (старые -> новые)
+  const lineLabels = metrics.length ? metrics.map(m => new Date(m.recorded_at).toLocaleDateString('ru-RU')) : ['Нет данных'];
+  const dataStress = metrics.length ? metrics.map(m => m.stress) : [0];
+  const dataMotivation = metrics.length ? metrics.map(m => m.motivation) : [0];
 
   const lineData = {
     labels: lineLabels,
@@ -246,7 +447,7 @@ export default function StudentApp() {
     }
   }
 
-  const latestMetric = sortedMetrics[sortedMetrics.length - 1] || { stress: 0, burnout: 0, anxiety: 0, motivation: 0, emotion: 0 };
+  const latestMetric = metrics.length ? metrics[metrics.length - 1] : { stress: 0, burnout: 0, anxiety: 0, motivation: 0, emotion: 0 };
   const radarData = {
     labels: ['Стресс', 'Выгорание', 'Тревожность', 'Мотивация', 'Эмоции'],
     datasets: [{
@@ -293,7 +494,7 @@ export default function StudentApp() {
             </button>
           </div>
         </div>
-        <button onClick={resetChat} className="w-full bg-zharyq-orange hover:bg-zharyq-orange-hover text-white text-sm font-medium py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 mb-8">
+        <button onClick={createNewSession} className="w-full bg-zharyq-orange hover:bg-zharyq-orange-hover text-white text-sm font-medium py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 mb-8">
           <Plus size={16} />
           Новый чек-ин
         </button>
@@ -311,11 +512,27 @@ export default function StudentApp() {
           ))}
           <a href="#" className="nav-item"><Info size={16} />О платформе</a>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pr-1">
           <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">История</p>
           <div className="flex flex-col gap-1">
-            {['Тест на выгорание', 'Утренняя практика дыхания', 'Обсуждение стресса перед ЕНТ'].map(h => (
-              <a key={h} href="#" className="block px-3 py-2 text-sm text-zharyq-gray hover:text-zharyq-dark truncate rounded-md hover:bg-gray-100">{h}</a>
+            {chatSessions.map(session => (
+              <div key={session.id} className={`group flex items-center justify-between px-3 py-2 text-sm truncate rounded-md cursor-pointer transition-colors ${currentSessionId === session.id ? 'bg-gray-100 text-zharyq-dark font-medium' : 'text-zharyq-gray hover:text-zharyq-dark hover:bg-gray-50'}`} onClick={() => loadSession(session.id)}>
+                {editingSessionId === session.id ? (
+                  <div className="flex w-full items-center gap-1" onClick={e => e.stopPropagation()}>
+                    <input autoFocus value={editTitle} onChange={e => setEditTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveEditedSession(session.id, e)} className="flex-1 text-xs px-1 border border-zharyq-border rounded outine-none focus:ring-1 focus:ring-zharyq-orange" />
+                    <button onClick={e => saveEditedSession(session.id, e)} className="text-green-600 hover:text-green-700"><Check size={14}/></button>
+                    <button onClick={() => setEditingSessionId(null)} className="text-gray-400 hover:text-gray-600"><X size={14}/></button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="truncate flex-1 pr-2">{session.title}</span>
+                    <div className={`${currentSessionId === session.id ? 'flex' : 'hidden group-hover:flex'} items-center gap-1 opacity-60`}>
+                      <button onClick={e => startEditingSession(session.id, session.title, e)} className="hover:text-zharyq-orange px-1"><Edit2 size={13}/></button>
+                      <button onClick={e => deleteSession(session, e)} className="hover:text-red-500 px-1"><Trash2 size={13}/></button>
+                    </div>
+                  </>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -389,7 +606,18 @@ export default function StudentApp() {
                       </div>
                     )}
                     <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-[75%] ${msg.role === 'ai' ? 'bg-zharyq-bg border border-zharyq-border rounded-tl-sm' : 'text-white rounded-tr-sm'}`} style={msg.role === 'user' ? { background: 'var(--color-accent)' } : {}}>
-                      {msg.text}
+                      {msg.role === 'ai' && msg.streaming && msg.text === '' ? (
+                        <span className="flex gap-1 items-center py-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-zharyq-gray animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-zharyq-gray animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-zharyq-gray animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </span>
+                      ) : (
+                        <span>
+                          {msg.text}
+                          {msg.streaming && <span className="inline-block w-0.5 h-3.5 bg-zharyq-dark ml-0.5 animate-pulse" />}
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -406,12 +634,12 @@ export default function StudentApp() {
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Расскажите, как вы себя чувствуете..."
-                  className="w-full bg-transparent border-none text-zharyq-dark focus:ring-0 resize-none py-2 text-sm max-h-32"
+                  className="w-full bg-transparent border-none text-zharyq-dark focus:ring-0 focus:outline-none resize-none py-2 text-sm max-h-32 scrollbar-hide"
                   style={{ minHeight: '40px' }}
                 />
                 <div className="flex items-center gap-1 shrink-0">
                   <button className="p-2 text-zharyq-gray hover:text-zharyq-orange rounded-xl transition-colors"><Mic size={20} /></button>
-                  <button onClick={() => sendMessage()} className="p-2 bg-zharyq-orange text-white rounded-xl hover:bg-zharyq-orange-hover transition-colors"><ArrowUp size={20} /></button>
+                  <button onClick={() => sendMessage()} disabled={isStreaming} className={`p-2 text-white rounded-xl transition-colors ${isStreaming ? 'bg-zharyq-gray cursor-not-allowed' : 'bg-zharyq-orange hover:bg-zharyq-orange-hover'}`}><ArrowUp size={20} /></button>
                 </div>
               </div>
               <p className="text-center text-[11px] text-zharyq-gray mt-3 hidden md:block">Zharyq AI может допускать ошибки. Результаты тестов конфиденциальны.</p>
@@ -871,6 +1099,43 @@ export default function StudentApp() {
         {/* Dynamic recommendations from test results */}
         <div className="text-zharyq-dark">
           <h3 className="text-sm font-semibold mb-4">Рекомендации для вас</h3>
+          {aiRecommendations.length > 0 && (
+            <div className="mb-4">
+              {aiRecommendations.map((r) => (
+                <div key={r.id} className="border border-violet-200 bg-violet-50/30 rounded-xl p-4 mb-3 hover:border-violet-300 transition-colors cursor-pointer group relative overflow-hidden animate-fade-in-up">
+                  <div className="absolute top-0 right-0 bg-violet-500 text-white text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-bl-lg">
+                    ИИ Рекомендует
+                  </div>
+                  <div className="flex items-start gap-3 mb-2 mt-1">
+                    <div className={`w-10 h-10 rounded-lg ${r.bg} flex items-center justify-center shrink-0`}>
+                      <r.icon size={20} className={r.color} />
+                    </div>
+                    <div>
+                      <h4 className={`text-sm font-medium group-hover:${r.color} transition-colors`}>{r.title}</h4>
+                      <p className="text-xs text-zharyq-gray mt-0.5 leading-relaxed">{r.sub}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {[
+            { icon: Zap, bg: 'bg-orange-50', color: 'text-zharyq-orange', title: 'Управление стрессом', sub: 'Видео • 5 минут', progress: 40 },
+            { icon: Brain, bg: 'bg-blue-50', color: 'text-blue-500', title: 'Фокус и концентрация', sub: 'Упражнение • 3 минуты', progress: 0 },
+          ].map((r, i) => (
+            <div key={i} className="border border-zharyq-border rounded-xl p-4 mb-3 hover:border-zharyq-gray transition-colors cursor-pointer group">
+              <div className="flex items-start gap-3 mb-3">
+                <div className={`w-10 h-10 rounded-lg ${r.bg} flex items-center justify-center shrink-0`}>
+                  <r.icon size={20} className={r.color} />
+                </div>
+                <div>
+                  <h4 className={`text-sm font-medium group-hover:${r.color} transition-colors`}>{r.title}</h4>
+                  <p className="text-xs text-zharyq-gray mt-0.5">{r.sub}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+
           {(() => {
             const latest = testHistory[0]
             let recs = []
@@ -920,6 +1185,37 @@ export default function StudentApp() {
           </button>
         ))}
       </nav>
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteConfirmSession && (
+        <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4 animate-overlay-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-modal-in">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mb-4">
+                <Trash2 size={24} className="text-red-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-zharyq-dark mb-2">Удалить этот чат?</h3>
+              <p className="text-sm text-zharyq-gray mb-6 leading-relaxed">
+                Вы собираетесь удалить чат «<span className="font-medium text-zharyq-dark">{deleteConfirmSession.title}</span>». Это действие необратимо и вся история сообщений будет стерта.
+              </p>
+              <div className="flex gap-3 w-full">
+                <button 
+                  onClick={() => setDeleteConfirmSession(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-zharyq-border text-zharyq-dark text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Отмена
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors shadow-sm shadow-red-200"
+                >
+                  Удалить
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
