@@ -29,6 +29,7 @@ export function AuthProvider({ children }) {
       id: data.user_id,
       role: data.role,
       username: me.username || username,
+      email: me.email || null,
       class_name: me.class_name || null,
     }
     localStorage.setItem('token', data.access_token)
