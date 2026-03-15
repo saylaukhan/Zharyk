@@ -22,13 +22,14 @@ from sqlalchemy.orm import Session
 from ..database import get_db, DATABASE_URL
 from ..models import ChatHistory, UserMetric, Alert, RiskLevel, User, ChatSession
 from ..schemas import ChatHistoryOut, AIDeltaOutput, ChatSessionCreate, ChatSessionUpdate, ChatSessionOut
+from ..services.rag import rag_index
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 OLLAMA_BASE = "http://localhost:11434"
-AGENT1_MODEL = "qwen2.5:14b"
+AGENT1_MODEL = "command-r"
 AGENT2_MODEL = "qwen2.5:14b"
 
 # --- ПРОМПТЫ ---
@@ -44,19 +45,37 @@ STRICT LANGUAGE RULES:
 Ты — эмпатичный AI-психолог платформы Zharyq.
 Отвечай на языке пользователя. Никогда не ставь диагнозы.
 Дай тёплую реакцию (2–4 предложения). Если всё плохо — предложи технику заземления.
-Не используй markdown, только чистый текст.
+Обращайся к себе в мужском поле.
+
+MARKDOWN FORMATTING:
+- Use markdown to enhance readability and visual hierarchy.
+- Use **bold** for key emotional statements or important concepts.
+- Use *italics* for emphasis or subtle suggestions.
+- Use lists (- item) to structure advice, steps, or options.
+- Use > blockquote for grounding techniques, affirmations, or highlighted advice.
+- Keep formatting minimal but meaningful — serve the user's emotional needs, not the design.
 """
 
 AGENT2_SYSTEM = """
-Ты — семантический анализатор. Твоя задача — оценить последнее сообщение пользователя и выдать изменения показателей (дельты от -30 до +30).
+Ты — семантический анализатор. Твоя задача — оценить последнее сообщение пользователя и выдать:
+1. Изменения показателей (дельты от -30 до +30)
+2. Решение о необходимости рекомендации курса
 
 STRICT LANGUAGE RULES:
-- Keep the reasoning field strictly in Russian or Kazakh. 
+- Keep the reasoning field strictly in Russian or Kazakh.
 - Zero tolerance for translations or CJK characters.
 
 ПРАВИЛА:
 1. ПРЯМОЕ СООТВЕТСТВИЕ: Если пользователь говорит "я выгорел" или "устал" — дельта выгорания +25/+30. Если говорит "появились силы" — дельта выгорания -25/-30.
 2. HEAVY INTENT: Поставь heavy_intent: true ТОЛЬКО если текст содержит признаки панической атаки, глубокой апатии ("не могу встать") или селфхарма.
+3. RECOMMEND COURSE: Поставь recommend_course: true ТОЛЬКО если выполнено ВСЕ из нижеперечисленного:
+   - Пользователь ЯВНО просит совет/рекомендацию ("посоветуй", "рекомендуй", "помоги найти", "подскажи", "нужна помощь")
+   - И/или heavy_intent активирован
+   - ИСКЛЮЧЕНИЕ: Даже если состояние критическое (>=80), не рекомендуй, если это просто фоновое упоминание.
+   ВАЖНО: НЕ рекомендуй курс просто потому, что:
+   • пользователь мимолетом упомянул проблему (тревога, стресс)
+   • состояние >= 60 без явного запроса помощи
+   • пользователь рассказывает о своем состоянии, но не просит советов
 
 Выдай ТОЛЬКО JSON в следующем формате:
 {
@@ -66,9 +85,41 @@ STRICT LANGUAGE RULES:
   "anxiety_delta": 0,
   "motivation_delta": 0,
   "emotion_delta": 0,
-  "heavy_intent": false
+  "heavy_intent": false,
+  "recommend_course": false
 }
 """
+
+# --- ОБНАРУЖЕНИЕ ЗАПРОСА КУРСА И ПОМОЩИ ---
+
+_COURSE_KEYWORDS = (
+    "курс", "посоветуй", "рекомендуй", "порекомендуй", "подбери", "подскажи",
+    "что посмотреть", "что почитать", "что послушать", "помоги найти",
+    "найди курс", "какой курс", "есть ли курс",
+    # Kazakh
+    "курс ұсын", "кеңес бер", "не ұсынасың",
+)
+
+_HELP_INTENT_KEYWORDS = (
+    "помощь", "помоги", "помогите", "помогу", "нужна помощь", "нужна поддержка",
+    "посоветуй", "посовет", "рекомендуй", "как справиться", "как мне быть",
+    "что делать", "подскажи", "подсказывай", "скажи",
+    # Kazakh
+    "көмек", "көмектесіңіз", "кеңес бер",
+)
+
+
+def _is_course_request(message: str) -> bool:
+    """Returns True if the user is explicitly asking for a course recommendation."""
+    msg = message.lower()
+    return any(kw in msg for kw in _COURSE_KEYWORDS)
+
+
+def _has_help_intent(message: str) -> bool:
+    """Returns True if the user is explicitly seeking help or advice."""
+    msg = message.lower()
+    return any(kw in msg for kw in _HELP_INTENT_KEYWORDS)
+
 
 # --- УТИЛИТЫ ---
 
@@ -171,14 +222,14 @@ async def _call_ollama_sync(model: str, messages: list) -> str:
 
 # --- ЛОГИКА АГЕНТОВ ---
 
-async def _analyze_and_update(user_id: int, user_message: str):
+async def _analyze_and_update(user_id: int, user_message: str, force_recommendation: bool = False):
     """
     Agent 2: Анализ дельты состояния и обновление БД.
     Запускается последовательно ПОСЛЕ стриминга Agent 1.
     """
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    
+
     # Создаем временную сессию для фонового процесса
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
     SessionLocal = sessionmaker(bind=engine)
@@ -198,8 +249,17 @@ async def _analyze_and_update(user_id: int, user_message: str):
         # 2. Формируем упрощенный запрос для Agent 2
         dynamic_system_prompt = AGENT2_SYSTEM
 
+        # Контекст для Agent 2: есть ли явный запрос помощи/рекомендации
+        has_explicit_help = _has_help_intent(user_message) or _is_course_request(user_message)
+        help_status = "ЯВНО просит помощь/совет" if has_explicit_help else "НЕ просит явно помощь"
+        help_context = (
+            f"[КОНТЕКСТ: Пользователь {help_status}. "
+            f"Рекомендуй курс ТОЛЬКО если это явный запрос или critical state.]"
+        )
+
         messages = [
             {"role": "system", "content": dynamic_system_prompt},
+            {"role": "system", "content": help_context},
             {"role": "user", "content": f"Оцени сообщение: '{user_message}'"},
         ]
 
@@ -257,8 +317,35 @@ async def _analyze_and_update(user_id: int, user_message: str):
         db.commit()
         db.refresh(new_metric)
 
-        # Возвращаем АБСОЛЮТНЫЕ значения для фронтенда
-        return {**new_values, "critical_type": critical_type}
+        # --- RAG: семантический подбор курсов ТОЛЬКО ПО РЕШЕНИЮ Agent 2 ---
+        # Agent 2 решил, нужен ли курс (recommend_course), на основе:
+        # • явного запроса пользователя
+        # • реальной потребности (состояние >= 60)
+        # • heavy_intent
+        recommend_course = data.get("recommend_course", False)
+        recs = []
+        recommendation_card = None
+
+        if recommend_course or force_recommendation:
+            # RAG ищет курс, семантически близкий к сообщению пользователя
+            recs = await rag_index.search(db, user_message, top_k=3)
+
+            if not recs:
+                # Fallback: если модель эмбеддингов недоступна — категорийный подбор
+                from ..services.recommendations import get_recommendations
+                recs = get_recommendations(db, new_values)
+
+            # Показываем карточку первого результата
+            if recs:
+                recommendation_card = recs[0]
+
+        # Возвращаем АБСОЛЮТНЫЕ значения + рекомендации для фронтенда
+        return {
+            **new_values,
+            "critical_type": critical_type,
+            "recommendations": recs,
+            "recommendation_card": recommendation_card,
+        }
 
     except Exception as e:
         logger.error(f"Background analysis failed: {e}")
@@ -296,6 +383,24 @@ async def chat_stream(
     context = [{"role": "system", "content": AGENT1_SYSTEM}]
     for h in reversed(history):
         context.append({"role": h.role, "content": h.content})
+
+    # Проверяем, явно ли пользователь просит курс
+    is_explicit_course_request = _is_course_request(message)
+
+    # Если да — заранее находим лучший курс и «подсказываем» Agent 1,
+    # чтобы он упомянул его естественно в своём ответе.
+    if is_explicit_course_request:
+        rag_results = await rag_index.search(db, message, top_k=1)
+        if rag_results:
+            best = rag_results[0]
+            hint = (
+                f"[СИСТЕМА: Пользователь просит рекомендацию курса. "
+                f"В базе найден наиболее подходящий курс: «{best['title']}» "
+                f"(категория: {best['category']}). "
+                f"Упомяни его в своём ответе естественно и тепло — "
+                f"без маркдауна, без кавычек в виде символов.]"
+            )
+            context.append({"role": "system", "content": hint})
 
     async def event_generator():
         full_reply = []
@@ -337,11 +442,27 @@ async def chat_stream(
 
         # ШАГ 2: Работа Agent 2 (Strictly Sequential)
         # Это запускается ТОЛЬКО когда цикл стриминга выше завершен
-        updated_metrics = await _analyze_and_update(user_id, message)
+        updated_metrics = await _analyze_and_update(user_id, message, force_recommendation=is_explicit_course_request)
         
         if updated_metrics:
             # Отправляем обновленные абсолютные значения для графика
             yield f"data: {json.dumps({'type': 'profile_updated', 'metrics': updated_metrics})}\n\n"
+
+            # Карточка-рекомендация в чат (только при значимом состоянии)
+            card = updated_metrics.get("recommendation_card")
+            if card:
+                yield f"data: {json.dumps({'type': 'recommendation_card', 'course': card})}\n\n"
+
+                # Сохраняем карточку в историю чата, чтобы она восстанавливалась при перезагрузке
+                from ..database import SessionLocal as SL2
+                with SL2() as card_db:
+                    card_db.add(ChatHistory(
+                        user_id=user_id,
+                        session_id=session_id,
+                        role="recommendation_card",
+                        content=json.dumps(card, ensure_ascii=False),
+                    ))
+                    card_db.commit()
 
         yield "data: [DONE]\n\n"
 
