@@ -2,26 +2,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
-
 from .database import engine, Base
-from .routers import users, checkins, alerts, sessions, analytics, courses, notes, auth, tests, ai_chat
-
-# Drop old course tables and recreate with new schema
-_MIGRATION_TABLES = [
-    "practice_modules",
-    "theory_modules",
-    "course_modules",
-    "course_progress",
-    "courses",
-]
-with engine.connect() as conn:
-    for table in _MIGRATION_TABLES:
-        try:
-            conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
-            conn.commit()
-        except Exception:
-            pass
+from .routers import users, checkins, alerts, sessions, analytics, courses, notes, auth, tests, ai_chat, recommendations
 
 Base.metadata.create_all(bind=engine)
 
@@ -56,6 +38,7 @@ app.include_router(courses.router, prefix="/api/v1")
 app.include_router(notes.router, prefix="/api/v1")
 app.include_router(ai_chat.router, prefix="/api/v1")
 app.include_router(tests.router, prefix="/api/v1")
+app.include_router(recommendations.router, prefix="/api/v1")
 
 
 @app.get("/")

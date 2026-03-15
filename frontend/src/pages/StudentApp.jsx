@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
 import {
   Sparkles, Plus, MessageSquare, BookOpen, BarChart2, Info, Settings,
   Bell, GraduationCap, Paperclip, Mic, ArrowUp, FileText, Camera,
   ArrowLeft, Search, Video, Clock, Layers, Headphones, Activity,
   Zap, BatteryLow, Heart, Rocket, Brain, SearchX, Flame, Sun,
   BookOpenCheck, Trophy, BarChart, User, MessageCircle, ClipboardList, LogOut, Edit2, Trash2, Check, X,
-  ChevronRight, ChevronLeft, CheckCircle, Target, Shield, AlertTriangle
+  ChevronRight, ChevronLeft, CheckCircle, Target, Shield, AlertTriangle, Square
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { Line, Radar } from 'react-chartjs-2'
@@ -192,6 +193,19 @@ export default function StudentApp() {
           setMetrics(sorted);
         })
         .catch(console.error)
+
+      // Pre-load sidebar recommendations from last known metrics
+      fetch(`${API}/recommendations/${authUser.id}`)
+        .then(r => r.ok ? r.json() : [])
+        .then(recs => {
+          if (recs.length > 0) {
+            setAiRecommendations(recs.map(r => {
+              const meta = CATEGORY_META[r.category] || DEFAULT_META
+              return { id: r.id, title: r.title, sub: r.category, icon: meta.icon, bg: meta.bg, color: meta.iconColor, courseId: r.id }
+            }))
+          }
+        })
+        .catch(console.error)
     }
   }, [authUser])
 
@@ -215,10 +229,13 @@ export default function StudentApp() {
     fetch(`${API}/ai/chat/history/${sessionId}`)
       .then(r => r.ok ? r.json() : [])
       .then(history => {
-        setMessages(history.map(h => ({
-          role: h.role === 'assistant' ? 'ai' : 'user',
-          text: h.content,
-        })))
+        setMessages(history.map(h => {
+          if (h.role === 'recommendation_card') {
+            try { return { role: 'recommendation_card', course: JSON.parse(h.content) } }
+            catch { return null }
+          }
+          return { role: h.role === 'assistant' ? 'ai' : 'user', text: h.content }
+        }).filter(Boolean))
         setView('chat')
       })
       .catch(console.error)
@@ -320,6 +337,21 @@ export default function StudentApp() {
             // Remove any existing critical specific recommendations if state improved
             setAiRecommendations(prev => prev.filter(r => !r.critical))
           }
+
+          // Update course recommendations sidebar from Agent 2 analysis
+          if (m.recommendations && m.recommendations.length > 0) {
+            const courseRecs = m.recommendations.map(r => {
+              const meta = CATEGORY_META[r.category] || { icon: BookOpen, bg: 'bg-orange-50', color: 'text-zharyq-orange' }
+              return { id: r.id, title: r.title, sub: r.category, icon: meta.icon, bg: meta.bg, color: meta.iconColor, courseId: r.id }
+            })
+            setAiRecommendations(prev => {
+              const critical = prev.filter(r => r.critical)
+              return [...critical, ...courseRecs].slice(0, 3)
+            })
+          }
+        } else if (payload.type === 'recommendation_card') {
+          // Inline course card in chat
+          setMessages(prev => [...prev, { role: 'recommendation_card', course: payload.course }])
         } else if (payload.type === 'error') {
           setMessages(prev => prev.map((m, i) =>
             i === prev.length - 1 && m.role === 'ai' ? { ...m, text: payload.content, streaming: false } : m
@@ -341,6 +373,18 @@ export default function StudentApp() {
           : m
       ))
     }
+  }
+
+  const stopGeneration = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+    }
+    setIsStreaming(false)
+    setMessages(prev => prev.map((m, i) =>
+      i === prev.length - 1 && m.role === 'ai'
+        ? { ...m, streaming: false }
+        : m
+    ))
   }
 
   const createNewSession = async () => {
@@ -556,7 +600,7 @@ export default function StudentApp() {
       </aside>
 
       {/* MAIN */}
-      <main className="flex-1 flex flex-col h-full bg-white relative pb-16 md:pb-0 text-zharyq-dark">
+      <main className={`flex-1 flex flex-col h-full relative pb-16 md:pb-0 ${isDark ? 'bg-[#18181B] text-zinc-100' : 'bg-white text-zharyq-dark'}`}>
         {/* Mobile header */}
         <header className="md:hidden border-b border-zharyq-border p-4 flex items-center justify-between bg-white z-10">
           <div className="flex items-center gap-2">
@@ -579,70 +623,151 @@ export default function StudentApp() {
         {/* CHAT VIEW */}
         {view === 'chat' && (
           <>
-            <div id="chat-container" className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col gap-6 animate-fade-in-up">
+            <div id="chat-container" className="flex-1 overflow-y-auto flex flex-col animate-fade-in-up pt-4 md:pt-6">
               {messages.length === 0 && (
-                <div className="mt-8 mb-4 text-center max-w-lg mx-auto w-full">
-                  <h2 className="text-2xl font-semibold mb-2">Доброе утро, {authUser?.username || 'Студент'}</h2>
-                  <p className="text-zharyq-gray mb-8">Как ваш настрой перед контрольной?</p>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <button onClick={() => sendMessage('Хочу пройти тест на уровень стресса')} className="bg-white border text-zharyq-dark border-zharyq-border hover:border-zharyq-orange text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 shadow-sm">
-                      <FileText size={16} className="text-zharyq-gray" />Оценить стресс
-                    </button>
-                    <button onClick={() => sendMessage('Определи мои эмоции')} className="bg-white border text-zharyq-dark border-zharyq-border hover:border-zharyq-orange text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 shadow-sm">
-                      <Camera size={16} className="text-zharyq-gray" />Скан по лицу
-                    </button>
-                    <button onClick={() => sendMessage('Признаки выгорания, устал')} className="bg-white border text-zharyq-dark border-zharyq-border hover:border-zharyq-orange text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 shadow-sm">
-                      <Activity size={16} className="text-zharyq-gray" />Выгорание
-                    </button>
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center min-h-[400px]">
+                  <div className="max-w-lg w-full">
+                    <div className="w-12 h-12 rounded-2xl bg-zharyq-orange flex items-center justify-center mx-auto mb-5">
+                      <Sparkles size={22} className="text-white" />
+                    </div>
+                    <h2 className="text-2xl font-semibold mb-2">Доброе утро, {authUser?.username || 'Студент'}</h2>
+                    <p className={`mb-8 text-sm ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>Как ваш настрой перед контрольной?</p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <button onClick={() => sendMessage('Хочу пройти тест на уровень стресса')} className={`border text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 hover:border-zharyq-orange ${isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-white border-zharyq-border text-zharyq-dark'}`}>
+                        <FileText size={16} className="text-zharyq-gray" />Оценить стресс
+                      </button>
+                      <button onClick={() => sendMessage('Определи мои эмоции')} className={`border text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 hover:border-zharyq-orange ${isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-white border-zharyq-border text-zharyq-dark'}`}>
+                        <Camera size={16} className="text-zharyq-gray" />Скан по лицу
+                      </button>
+                      <button onClick={() => sendMessage('Признаки выгорания, устал')} className={`border text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 hover:border-zharyq-orange ${isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-white border-zharyq-border text-zharyq-dark'}`}>
+                        <Activity size={16} className="text-zharyq-gray" />Выгорание
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
-              <div id="messages-wrapper" className="flex flex-col gap-6 w-full max-w-3xl mx-auto pb-4">
-                {messages.map((msg, i) => (
-                  <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'items-start'}`}>
-                    {msg.role === 'ai' && (
-                      <div className="w-8 h-8 rounded-full bg-zharyq-orange flex items-center justify-center shrink-0 mt-1">
+
+              {messages.map((msg, i) => {
+                // ── Recommendation card row ──────────────────────────────────
+                if (msg.role === 'recommendation_card') {
+                  const meta = CATEGORY_META[msg.course.category] || { icon: BookOpen, bg: 'bg-orange-50', iconColor: 'text-zharyq-orange', tagColor: 'text-zharyq-orange' }
+                  const CardIcon = meta.icon
+                  return (
+                    <div key={i} className="px-4 md:px-8 py-4 animate-fade-in-up">
+                      <div className="max-w-3xl mx-auto flex gap-4">
+                        <div className="w-9 shrink-0" />
+                        <div
+                            onClick={() => navigate(`/course/${msg.course.id}`)}
+                            className={`flex-1 rounded-xl border cursor-pointer group hover:border-zharyq-orange transition-colors duration-150 overflow-hidden ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-white border-[#E5E7EB]'}`}
+                          >
+                            <div className="p-4">
+                              <div className="flex items-center mb-3">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-zharyq-orange bg-zharyq-orange/10">
+                                  <Sparkles size={8} />ИИ рекомендует
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-xl ${meta.bg} flex items-center justify-center shrink-0`}>
+                                  <CardIcon size={20} className={meta.iconColor} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-[11px] font-medium ${meta.iconColor} mb-0.5`}>{msg.course.category}</p>
+                                  <h4 className={`text-sm font-semibold leading-snug group-hover:text-zharyq-orange transition-colors line-clamp-2 ${isDark ? 'text-zinc-100' : 'text-zharyq-dark'}`}>{msg.course.title}</h4>
+                                </div>
+                              </div>
+                            </div>
+                            <div className={`px-4 pb-3 pt-2.5 border-t flex items-center justify-between ${isDark ? 'border-[#3F3F46]' : 'border-[#E5E7EB]'}`}>
+                              <span className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>Начать курс</span>
+                              <div className="flex items-center gap-1 text-xs font-semibold text-zharyq-teal group-hover:translate-x-0.5 transition-transform">
+                                Перейти <ChevronRight size={13} />
+                              </div>
+                            </div>
+                          </div>
+                      </div>
+                    </div>
+                  )
+                }
+
+                // ── User message — speech bubble ─────────────────────────────
+                if (msg.role === 'user') {
+                  return (
+                    <div key={i} className="px-4 md:px-8 py-2 animate-fade-in-up">
+                      <div className="max-w-3xl mx-auto flex justify-end">
+                        <div className="rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed max-w-[75%] text-white" style={{ background: 'var(--color-accent)' }}>
+                          {msg.text}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
+
+                // ── AI message — flat text row ───────────────────────────────
+                return (
+                  <div key={i} className="px-4 md:px-8 py-4 animate-fade-in-up">
+                    <div className="max-w-3xl mx-auto flex gap-4">
+                      <div className="w-9 h-9 rounded-full bg-zharyq-orange flex items-center justify-center shrink-0 mt-0.5">
                         <Sparkles size={14} className="text-white" />
                       </div>
-                    )}
-                    <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-[75%] ${msg.role === 'ai' ? 'bg-zharyq-bg border border-zharyq-border rounded-tl-sm' : 'text-white rounded-tr-sm'}`} style={msg.role === 'user' ? { background: 'var(--color-accent)' } : {}}>
-                      {msg.role === 'ai' && msg.streaming && msg.text === '' ? (
-                        <span className="flex gap-1 items-center py-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-zharyq-gray animate-bounce" style={{ animationDelay: '0ms' }} />
-                          <span className="w-1.5 h-1.5 rounded-full bg-zharyq-gray animate-bounce" style={{ animationDelay: '150ms' }} />
-                          <span className="w-1.5 h-1.5 rounded-full bg-zharyq-gray animate-bounce" style={{ animationDelay: '300ms' }} />
-                        </span>
-                      ) : (
-                        <span>
-                          {msg.text}
-                          {msg.streaming && <span className="inline-block w-0.5 h-3.5 bg-zharyq-dark ml-0.5 animate-pulse" />}
-                        </span>
-                      )}
+                      <div className={`flex-1 text-sm leading-[1.6] prose-sm ${isDark ? 'text-zinc-100 prose-invert' : 'text-zharyq-dark'}`}>
+                        {msg.streaming && msg.text === '' ? (
+                          <span className="flex gap-1 items-center py-0">
+                            <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${isDark ? 'bg-zinc-500' : 'bg-zharyq-gray'}`} style={{ animationDelay: '0ms' }} />
+                            <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${isDark ? 'bg-zinc-500' : 'bg-zharyq-gray'}`} style={{ animationDelay: '150ms' }} />
+                            <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${isDark ? 'bg-zinc-500' : 'bg-zharyq-gray'}`} style={{ animationDelay: '300ms' }} />
+                          </span>
+                        ) : (
+                          <div className="markdown-content">
+                            <ReactMarkdown
+                              components={{
+                                p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
+                                strong: ({node, ...props}) => <strong className="font-semibold text-zharyq-orange" {...props} />,
+                                em: ({node, ...props}) => <em className="italic opacity-90" {...props} />,
+                                ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2 pl-2" {...props} />,
+                                ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2 pl-2" {...props} />,
+                                li: ({node, ...props}) => <li className="mb-1" {...props} />,
+                                blockquote: ({node, ...props}) => <blockquote className={`border-l-4 border-zharyq-orange pl-3 py-1 my-2 italic ${isDark ? 'text-zinc-300' : 'text-zharyq-gray'}`} {...props} />,
+                                code: ({node, inline, ...props}) => inline ?
+                                  <code className={`px-1.5 py-0.5 rounded text-xs font-mono ${isDark ? 'bg-zinc-700 text-zinc-200' : 'bg-gray-100 text-zharyq-dark'}`} {...props} /> :
+                                  <code className={`block px-3 py-2 rounded text-xs font-mono mb-2 overflow-x-auto ${isDark ? 'bg-zinc-800 text-zinc-200' : 'bg-gray-50 text-zharyq-dark'}`} {...props} />,
+                              }}
+                            >
+                              {msg.text}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                ))}
-                <div ref={messagesEndRef} />
-              </div>
+                )
+              })}
+              <div ref={messagesEndRef} />
             </div>
-            <div className="p-4 md:p-6 bg-white w-full max-w-3xl mx-auto animate-fade-in-up" style={{ animationDelay: '50ms' }}>
-              <div className="relative flex items-end gap-2 border border-zharyq-border rounded-2xl bg-white p-2 focus-within:border-zharyq-orange focus-within:ring-1 focus-within:ring-zharyq-orange transition-all">
-                <button className="p-2 text-zharyq-gray hover:text-zharyq-dark rounded-xl shrink-0"><Paperclip size={20} /></button>
-                <textarea
-                  ref={textareaRef}
-                  rows={1}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Расскажите, как вы себя чувствуете..."
-                  className="w-full bg-transparent border-none text-zharyq-dark focus:ring-0 focus:outline-none resize-none py-2 text-sm max-h-32 scrollbar-hide"
-                  style={{ minHeight: '40px' }}
-                />
-                <div className="flex items-center gap-1 shrink-0">
-                  <button className="p-2 text-zharyq-gray hover:text-zharyq-orange rounded-xl transition-colors"><Mic size={20} /></button>
-                  <button onClick={() => sendMessage()} disabled={isStreaming} className={`p-2 text-white rounded-xl transition-colors ${isStreaming ? 'bg-zharyq-gray cursor-not-allowed' : 'bg-zharyq-orange hover:bg-zharyq-orange-hover'}`}><ArrowUp size={20} /></button>
+
+            <div className={`border-t p-4 md:p-6 animate-fade-in-up ${isDark ? 'bg-[#18181B] border-[#3F3F46]' : 'bg-white border-[#E5E7EB]'}`} style={{ animationDelay: '50ms' }}>
+              <div className="max-w-3xl mx-auto">
+                <div className={`relative flex items-center gap-2 border rounded-2xl p-2 focus-within:border-zharyq-orange focus-within:ring-1 focus-within:ring-zharyq-orange transition-all ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-white border-zharyq-border'}`}>
+                  <button className="p-2 text-zharyq-gray hover:text-zharyq-dark rounded-xl shrink-0 flex items-center justify-center"><Paperclip size={20} /></button>
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Расскажите, как вы себя чувствуете..."
+                    className={`w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none py-2 text-sm max-h-32 scrollbar-hide align-middle ${isDark ? 'text-zinc-100 placeholder:text-zinc-500' : 'text-zharyq-dark'}`}
+                    style={{ minHeight: '40px' }}
+                  />
+                  <div className="flex items-center gap-1 shrink-0 h-fit">
+                    <button className="p-2 text-zharyq-gray hover:text-zharyq-orange rounded-xl transition-colors flex items-center justify-center"><Mic size={20} /></button>
+                    {isStreaming ? (
+                      <button onClick={stopGeneration} className="p-2 text-white bg-zharyq-teal hover:bg-zharyq-teal/90 rounded-xl transition-colors flex items-center justify-center" title="Остановить генерацию"><Square size={20} /></button>
+                    ) : (
+                      <button onClick={() => sendMessage()} className="p-2 text-white bg-zharyq-orange hover:bg-zharyq-orange-hover rounded-xl transition-colors flex items-center justify-center" title="Отправить сообщение"><ArrowUp size={20} /></button>
+                    )}
+                  </div>
                 </div>
+                <p className={`text-center text-[11px] mt-3 hidden md:block ${isDark ? 'text-zinc-500' : 'text-zharyq-gray'}`}>Zharyq AI может допускать ошибки. Результаты тестов конфиденциальны.</p>
               </div>
-              <p className="text-center text-[11px] text-zharyq-gray mt-3 hidden md:block">Zharyq AI может допускать ошибки. Результаты тестов конфиденциальны.</p>
             </div>
           </>
         )}
@@ -1102,39 +1227,24 @@ export default function StudentApp() {
           {aiRecommendations.length > 0 && (
             <div className="mb-4">
               {aiRecommendations.map((r) => (
-                <div key={r.id} className="border border-violet-200 bg-violet-50/30 rounded-xl p-4 mb-3 hover:border-violet-300 transition-colors cursor-pointer group relative overflow-hidden animate-fade-in-up">
-                  <div className="absolute top-0 right-0 bg-violet-500 text-white text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-bl-lg">
+                <div key={r.id} onClick={() => r.courseId && navigate(`/course/${r.courseId}`)} className="border border-zharyq-teal bg-zharyq-bg rounded-xl p-4 mb-3 hover:border-zharyq-teal/80 transition-colors cursor-pointer group relative overflow-hidden animate-fade-in-up">
+                  <div className="absolute top-0 right-0 bg-[#0d9488] text-white text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-bl-lg">
                     ИИ Рекомендует
                   </div>
                   <div className="flex items-start gap-3 mb-2 mt-1">
                     <div className={`w-10 h-10 rounded-lg ${r.bg} flex items-center justify-center shrink-0`}>
                       <r.icon size={20} className={r.color} />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <h4 className={`text-sm font-medium group-hover:${r.color} transition-colors`}>{r.title}</h4>
                       <p className="text-xs text-zharyq-gray mt-0.5 leading-relaxed">{r.sub}</p>
                     </div>
+                    {r.courseId && <ChevronRight size={16} className="text-zharyq-gray mt-1 shrink-0" />}
                   </div>
                 </div>
               ))}
             </div>
           )}
-          {[
-            { icon: Zap, bg: 'bg-orange-50', color: 'text-zharyq-orange', title: 'Управление стрессом', sub: 'Видео • 5 минут', progress: 40 },
-            { icon: Brain, bg: 'bg-blue-50', color: 'text-blue-500', title: 'Фокус и концентрация', sub: 'Упражнение • 3 минуты', progress: 0 },
-          ].map((r, i) => (
-            <div key={i} className="border border-zharyq-border rounded-xl p-4 mb-3 hover:border-zharyq-gray transition-colors cursor-pointer group">
-              <div className="flex items-start gap-3 mb-3">
-                <div className={`w-10 h-10 rounded-lg ${r.bg} flex items-center justify-center shrink-0`}>
-                  <r.icon size={20} className={r.color} />
-                </div>
-                <div>
-                  <h4 className={`text-sm font-medium group-hover:${r.color} transition-colors`}>{r.title}</h4>
-                  <p className="text-xs text-zharyq-gray mt-0.5">{r.sub}</p>
-                </div>
-              </div>
-            </div>
-          ))}
 
           {(() => {
             const latest = testHistory[0]
@@ -1144,13 +1254,13 @@ export default function StudentApp() {
             }
             if (recs.length > 0) {
               return recs.map(r => (
-                <div key={r.id} onClick={() => navigate(`/course/${r.id}`)} className="border border-zharyq-border rounded-xl p-4 mb-3 hover:border-zharyq-orange transition-colors cursor-pointer group">
+                <div key={r.id} onClick={() => navigate(`/course/${r.id}`)} className="border border-zharyq-teal bg-zharyq-bg rounded-xl p-4 mb-3 hover:border-zharyq-teal/80 transition-colors cursor-pointer group">
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
-                      <BookOpen size={20} className="text-zharyq-orange" />
+                    <div className="w-10 h-10 rounded-lg bg-zharyq-teal-light flex items-center justify-center shrink-0">
+                      <BookOpen size={20} className="text-zharyq-teal" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-sm font-medium group-hover:text-zharyq-orange transition-colors">{r.title}</h4>
+                      <h4 className="text-sm font-medium group-hover:text-zharyq-teal transition-colors">{r.title}</h4>
                       <p className="text-xs text-zharyq-gray mt-0.5">{r.category}</p>
                     </div>
                     <ChevronRight size={16} className="text-zharyq-gray mt-1 shrink-0" />

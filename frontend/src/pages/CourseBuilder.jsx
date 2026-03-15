@@ -157,7 +157,7 @@ function CourseSettingsEditor({ courseId, initialCategory, initialDescription, i
   )
 }
 
-function TheoryModuleEditor({ module, courseId, moduleDbId }) {
+function TheoryModuleEditor({ module, courseId, moduleDbId, onSave }) {
   const [videoUrl, setVideoUrl] = useState(module.theory?.video_url || '')
   const [lessonTitle, setLessonTitle] = useState(module.theory?.lesson_title || module.label || '')
   const [showVideoInput, setShowVideoInput] = useState(false)
@@ -165,8 +165,15 @@ function TheoryModuleEditor({ module, courseId, moduleDbId }) {
   const [showFormatBar, setShowFormatBar] = useState(false)
   const [formatBarPos, setFormatBarPos] = useState({ top: 0, left: 0 })
   const articleRef = useRef(null)
-
   const editorWrapRef = useRef(null)
+
+  // Always-current refs so the unmount cleanup can read the latest values
+  const latestVideoUrl    = useRef(videoUrl)
+  const latestLessonTitle = useRef(lessonTitle)
+  const onSaveRef         = useRef(onSave)
+  useEffect(() => { latestVideoUrl.current    = videoUrl  }, [videoUrl])
+  useEffect(() => { latestLessonTitle.current = lessonTitle }, [lessonTitle])
+  useEffect(() => { onSaveRef.current         = onSave    }, [onSave])
 
   const saveTheory = useCallback(async (payload) => {
     if (!courseId || !moduleDbId) return
@@ -176,16 +183,38 @@ function TheoryModuleEditor({ module, courseId, moduleDbId }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
+      onSaveRef.current?.(payload)
     } catch (e) { console.error(e) }
   }, [courseId, moduleDbId])
 
-  const debouncedSave = useDebounce(saveTheory, 800)
+  // Flush all edits immediately when the user navigates away — don't wait for debounce
+  useEffect(() => {
+    return () => {
+      if (!courseId || !moduleDbId) return
+      const payload = {
+        video_url:       latestVideoUrl.current,
+        lesson_title:    latestLessonTitle.current,
+        article_content: articleRef.current?.innerHTML || '',
+      }
+      onSaveRef.current?.(payload)
+      fetch(`${API}/courses/${courseId}/modules/${moduleDbId}/theory`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(console.error)
+    }
+  }, [courseId, moduleDbId])
 
-  const handleVideoUrl = (val) => { setVideoUrl(val); debouncedSave({ video_url: val }) }
-  const handleTitle = (val) => { setLessonTitle(val); debouncedSave({ lesson_title: val }) }
+  // Each field gets its own debounce instance so fast edits across fields don't cancel each other
+  const debouncedSaveVideo   = useDebounce(saveTheory, 800)
+  const debouncedSaveTitle   = useDebounce(saveTheory, 800)
+  const debouncedSaveArticle = useDebounce(saveTheory, 800)
+
+  const handleVideoUrl = (val) => { setVideoUrl(val); debouncedSaveVideo({ video_url: val }) }
+  const handleTitle = (val) => { setLessonTitle(val); debouncedSaveTitle({ lesson_title: val }) }
   const handleArticle = () => {
     const content = articleRef.current?.innerHTML || ''
-    debouncedSave({ article_content: content })
+    debouncedSaveArticle({ article_content: content })
   }
 
   const handleEditorMouseUp = useCallback(() => {
@@ -916,7 +945,17 @@ export default function CourseBuilder() {
         courseType={courseType}
       />
     )
-    if (selectedModule.type === 'theory') return <TheoryModuleEditor key={selectedModule.id} module={selectedModule} courseId={courseId} moduleDbId={selectedModule.dbId} />
+    if (selectedModule.type === 'theory') return (
+      <TheoryModuleEditor
+        key={selectedModule.id}
+        module={selectedModule}
+        courseId={courseId}
+        moduleDbId={selectedModule.dbId}
+        onSave={(updates) => setModules(prev => prev.map(m =>
+          m.id === selectedModule.id ? { ...m, theory: { ...(m.theory || {}), ...updates } } : m
+        ))}
+      />
+    )
     if (selectedModule.type === 'practice') return <PracticeModuleEditor key={selectedModule.id} module={selectedModule} courseId={courseId} moduleDbId={selectedModule.dbId} />
     return <EmptyEditor />
   }
@@ -963,6 +1002,7 @@ export default function CourseBuilder() {
         <div className="flex items-center gap-2 ml-auto">
           <ThemeToggle />
           <button
+            onClick={() => courseId && navigate(`/course/${courseId}`)}
             className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border transition-colors hover:bg-gray-100"
             style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
           >

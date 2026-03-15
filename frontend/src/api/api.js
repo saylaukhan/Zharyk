@@ -48,3 +48,6 @@ export const submitTest = (testId, answers) =>
 export const fetchMyTestResults = () => request('/tests/results/me');
 export const fetchUserTestResults = (userId) => request(`/tests/results/user/${userId}`);
 
+// ── Recommendations ───────────────────────────────────────────
+export const fetchRecommendations = (userId) => request(`/recommendations/${userId}`);
+

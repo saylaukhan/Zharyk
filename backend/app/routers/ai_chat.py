@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 OLLAMA_BASE = "http://localhost:11434"
-AGENT1_MODEL = "command-r"
-AGENT2_MODEL = "qwen2.5:14b"
+AGENT1_MODEL = "qwen2.5:14b"  # Empathetic psychologist (larger model for better conversational ability)
+AGENT2_MODEL = "qwen2.5:3b"   # State analyzer (smaller model for JSON delta analysis)
 
 # --- ПРОМПТЫ ---
 
@@ -184,7 +184,7 @@ async def _call_ollama_stream(model: str, messages: list) -> AsyncGenerator[str,
         "messages": messages,
         "stream": True,
         "options": {
-            "temperature": 0.4, 
+            "temperature": 0.4,
             "top_p": 0.9,
             "num_predict": 512,
             "stop": ["Translation:", "Перевод:", "中文"]
@@ -193,16 +193,33 @@ async def _call_ollama_stream(model: str, messages: list) -> AsyncGenerator[str,
     async with httpx.AsyncClient(timeout=120.0) as client:
         try:
             async with client.stream("POST", f"{OLLAMA_BASE}/api/chat", json=payload) as resp:
-                resp.raise_for_status()
+                if resp.status_code != 200:
+                    error_msg = f"Ollama API error ({resp.status_code})"
+                    logger.error(error_msg)
+                    raise Exception(error_msg)
+
                 async for line in resp.aiter_lines():
-                    if not line.strip(): continue
-                    chunk = json.loads(line)
-                    token = chunk.get("message", {}).get("content", "")
-                    if token: yield token
-                    if chunk.get("done"): break
+                    if not line.strip():
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                        token = chunk.get("message", {}).get("content", "")
+                        if token:
+                            yield token
+                        if chunk.get("done"):
+                            break
+                    except json.JSONDecodeError as je:
+                        logger.warning(f"Failed to parse Ollama chunk: {line}")
+                        continue
+        except httpx.TimeoutException as e:
+            logger.error(f"Ollama timeout: {e}")
+            raise Exception("Ollama service timeout. Please try again.")
+        except httpx.ConnectError as e:
+            logger.error(f"Cannot connect to Ollama: {e}")
+            raise Exception("Cannot connect to Ollama service. Is it running on localhost:11434?")
         except Exception as e:
-            logger.error(f"Ollama stream error: {e}")
-            yield f"Error: {str(e)}"
+            logger.error(f"Ollama stream error: {type(e).__name__}: {e}")
+            raise
 
 async def _call_ollama_sync(model: str, messages: list) -> str:
     """Синхронный (блокирующий ожидание) вызов Ollama."""
@@ -211,15 +228,29 @@ async def _call_ollama_sync(model: str, messages: list) -> str:
         "messages": messages,
         "stream": False,
         "options": {
-            "temperature": 0.2, # Agent 2 needs even lower temperature for JSON
+            "temperature": 0.2,  # Agent 2 needs even lower temperature for JSON
             "top_p": 0.9,
             "num_predict": 512,
         },
     }
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(f"{OLLAMA_BASE}/api/chat", json=payload)
-        resp.raise_for_status()
-        return resp.json().get("message", {}).get("content", "")
+        try:
+            resp = await client.post(f"{OLLAMA_BASE}/api/chat", json=payload)
+            if resp.status_code != 200:
+                error_text = resp.text[:200]
+                error_msg = f"Ollama API error ({resp.status_code}): {error_text}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+            return resp.json().get("message", {}).get("content", "")
+        except httpx.TimeoutException as e:
+            logger.error(f"Ollama timeout during sync call: {e}")
+            raise Exception("Ollama service timeout")
+        except httpx.ConnectError as e:
+            logger.error(f"Cannot connect to Ollama: {e}")
+            raise Exception("Cannot connect to Ollama service")
+        except Exception as e:
+            logger.error(f"Ollama sync error: {type(e).__name__}: {e}")
+            raise
 
 # --- ЛОГИКА АГЕНТОВ ---
 
@@ -423,18 +454,20 @@ async def chat_stream(
 
     async def event_generator():
         full_reply = []
-        
+
         # ШАГ 1: Работа Agent 1 (Streaming)
         try:
             async for token in _call_ollama_stream(AGENT1_MODEL, context):
                 # Простейшая фильтрация иероглифов на лету
                 if re.search(r'[\u4e00-\u9fff]', token):
                     continue
-                
+
                 full_reply.append(token)
                 yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            error_msg = str(e)
+            logger.error(f"Agent 1 streaming failed: {error_msg}")
+            yield f"data: {json.dumps({'type': 'error', 'content': f'Ошибка при обработке запроса: {error_msg}'})}\n\n"
             yield "data: [DONE]\n\n"
             return
 
