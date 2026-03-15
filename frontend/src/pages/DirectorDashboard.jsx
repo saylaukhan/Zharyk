@@ -7,6 +7,7 @@ import {
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
+import { useAuth } from '../context/AuthContext'
 import { 
   fetchDirectorDashboard, 
   fetchStudentsWithMetrics, 
@@ -18,6 +19,7 @@ ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointE
 
 export default function DirectorDashboard() {
   const { isDark } = useTheme()
+  const { logout } = useAuth()
   const [dashboard, setDashboard] = useState(null)
   const [students, setStudents] = useState([])
   const [stressDist, setStressDist] = useState(null)
@@ -117,12 +119,18 @@ export default function DirectorDashboard() {
               <h1 className="text-xl font-semibold truncate">Director Dashboard</h1>
             </div>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-4">
             <span className="hidden sm:flex items-center gap-2 text-xs text-zharyq-gray border border-zharyq-border rounded-full px-3 py-1.5">
               <span className="w-2 h-2 rounded-full bg-zharyq-teal" />
               Live
             </span>
             <ThemeToggle />
+            <button
+              onClick={logout}
+              className="text-sm font-medium px-4 py-2 rounded-xl text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-colors"
+            >
+              Выйти
+            </button>
           </div>
         </div>
       </header>
