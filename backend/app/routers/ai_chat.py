@@ -68,14 +68,15 @@ STRICT LANGUAGE RULES:
 ПРАВИЛА:
 1. ПРЯМОЕ СООТВЕТСТВИЕ: Если пользователь говорит "я выгорел" или "устал" — дельта выгорания +25/+30. Если говорит "появились силы" — дельта выгорания -25/-30.
 2. HEAVY INTENT: Поставь heavy_intent: true ТОЛЬКО если текст содержит признаки панической атаки, глубокой апатии ("не могу встать") или селфхарма.
-3. RECOMMEND COURSE: Поставь recommend_course: true ТОЛЬКО если выполнено ВСЕ из нижеперечисленного:
+3. RECOMMEND COURSE: Поставь recommend_course: true ТОЛЬКО если:
    - Пользователь ЯВНО просит совет/рекомендацию ("посоветуй", "рекомендуй", "помоги найти", "подскажи", "нужна помощь")
-   - И/или heavy_intent активирован
-   - ИСКЛЮЧЕНИЕ: Даже если состояние критическое (>=80), не рекомендуй, если это просто фоновое упоминание.
-   ВАЖНО: НЕ рекомендуй курс просто потому, что:
-   • пользователь мимолетом упомянул проблему (тревога, стресс)
-   • состояние >= 60 без явного запроса помощи
-   • пользователь рассказывает о своем состоянии, но не просит советов
+   - ИЛИ heavy_intent активирован
+   - ИЛИ состояние КРИТИЧЕСКОЕ: (stress >= 70 ИЛИ burnout >= 70 ИЛИ anxiety >= 70) И нет явного "всё хорошо" в тексте
+   - ИЛИ состояние НИЗКОЕ для позитивных метрик: (emotion < 20 ИЛИ motivation < 20)
+
+   ВАЖНО: НЕ рекомендуй, если:
+   • состояние >= 60 БЕЗ явного запроса (недостаточно само по себе)
+   • пользователь просто рассказывает о проблеме, но не просит помощь
 
 Выдай ТОЛЬКО JSON в следующем формате:
 {
@@ -254,7 +255,8 @@ async def _analyze_and_update(user_id: int, user_message: str, force_recommendat
         help_status = "ЯВНО просит помощь/совет" if has_explicit_help else "НЕ просит явно помощь"
         help_context = (
             f"[КОНТЕКСТ: Пользователь {help_status}. "
-            f"Рекомендуй курс ТОЛЬКО если это явный запрос или critical state.]"
+            f"Рекомендуй курс: только при явном запросе, heavy_intent, "
+            f"критических метриках (stress/burnout/anxiety >= 70) ИЛИ низких позитивных (emotion/motivation < 20)]"
         )
 
         messages = [
@@ -319,10 +321,27 @@ async def _analyze_and_update(user_id: int, user_message: str, force_recommendat
 
         # --- RAG: семантический подбор курсов ТОЛЬКО ПО РЕШЕНИЮ Agent 2 ---
         # Agent 2 решил, нужен ли курс (recommend_course), на основе:
-        # • явного запроса пользователя
-        # • реальной потребности (состояние >= 60)
-        # • heavy_intent
+        # • явного запроса пользователя (force_recommendation)
+        # • critical state (stress/burnout/anxiety >= 70 или emotion/motivation < 20)
+        # • heavy_intent (паника, апатия, селфхарм)
         recommend_course = data.get("recommend_course", False)
+        heavy_intent = data.get("heavy_intent", False)
+
+        # Backend validation: проверяем, что рекомендация соответствует правилам
+        if recommend_course and not (force_recommendation or heavy_intent):
+            # Если не явный запрос и не heavy_intent, проверяем пороги состояния
+            is_critical_negative = (
+                new_values["stress"] >= 70 or
+                new_values["burnout"] >= 70 or
+                new_values["anxiety"] >= 70
+            )
+            is_critical_positive_low = (
+                new_values["emotion"] < 20 or
+                new_values["motivation"] < 20
+            )
+            # Рекомендуем ТОЛЬКО если есть critical state
+            recommend_course = is_critical_negative or is_critical_positive_low
+
         recs = []
         recommendation_card = None
 
