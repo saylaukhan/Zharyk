@@ -14,7 +14,7 @@ import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { 
-  fetchAlertsRich, fetchStudentsWithMetrics, fetchSessions, fetchNotes 
+  fetchAlertsRich, fetchStudentsWithMetrics, fetchSessions, fetchNotes, fetchUserTestResults, fetchTests 
 } from '../api/api'
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
@@ -97,6 +97,9 @@ export default function Psychologist() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [userTestResults, setUserTestResults] = useState([])
+  const [psyTests, setPsyTests] = useState([])
+  const [psyTestsLoading, setPsyTestsLoading] = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -112,6 +115,17 @@ export default function Psychologist() {
       setLoading(false)
     })
   }, [])
+
+  // Load tests dynamically when 'tests' view is opened
+  useEffect(() => {
+    if (view === 'tests' && psyTests.length === 0) {
+      setPsyTestsLoading(true)
+      fetchTests()
+        .then(setPsyTests)
+        .catch(console.error)
+        .finally(() => setPsyTestsLoading(false))
+    }
+  }, [view, psyTests.length])
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
@@ -252,10 +266,15 @@ export default function Psychologist() {
     const student = students.find(s => s.id === id)
     setSelectedUser(student)
     setProfileOpen(true)
+    // Load test results for this student
+    fetchUserTestResults(id)
+      .then(setUserTestResults)
+      .catch(() => setUserTestResults([]))
   }
   const closeProfile = () => {
     setProfileOpen(false)
     setSelectedUser(null)
+    setUserTestResults([])
   }
 
   const chartGrid = isDark ? '#3F3F46' : '#E5E7EB'
@@ -520,30 +539,36 @@ export default function Psychologist() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {TESTS_LIB.map(t => (
-                      <div key={t.id} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group flex flex-col h-full">
-                        <div className="flex items-start gap-3 mb-3">
-                          <div className={`w-10 h-10 rounded-xl ${t.bg} flex items-center justify-center shrink-0`}>
-                            <t.icon size={20} className={t.color} />
+                  {psyTestsLoading ? (
+                    <div className="text-center py-16 text-zharyq-gray text-sm">Загрузка тестов...</div>
+                  ) : psyTests.length === 0 ? (
+                    <div className="text-center py-16 text-zharyq-gray text-sm">Нет доступных тестов в базе</div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {psyTests.map(t => (
+                        <div key={t.id} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group flex flex-col h-full">
+                          <div className="flex items-start gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
+                              <Zap size={20} className="text-zharyq-orange" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors leading-tight mb-1">{t.title}</h4>
+                              <p className="text-[11px] text-zharyq-gray leading-relaxed">{t.description}</p>
+                            </div>
                           </div>
-                          <div>
-                            <h4 className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors leading-tight mb-1">{t.title}</h4>
-                            <p className="text-[11px] text-zharyq-gray leading-relaxed">{t.desc}</p>
+                          <div className="mt-auto pt-3 border-t border-zharyq-border">
+                            <div className="flex items-center justify-between mb-3 text-[11px] text-zharyq-gray">
+                              <span className="flex items-center gap-1"><Clock size={12} /> {t.duration_minutes} мин</span>
+                              <span className="flex items-center gap-1"><Layers size={12} /> {t.questions_count} вопр.</span>
+                            </div>
+                            <button className="w-full py-1.5 text-[11px] font-semibold text-zharyq-dark border border-zharyq-border rounded-lg hover:bg-gray-50 transition-colors">
+                              Назначить классу
+                            </button>
                           </div>
                         </div>
-                        <div className="mt-auto pt-3 border-t border-zharyq-border">
-                          <div className="flex items-center justify-between mb-3 text-[11px] text-zharyq-gray">
-                            <span className="flex items-center gap-1"><Clock size={12} /> {t.duration}</span>
-                            <span className="flex items-center gap-1"><Layers size={12} /> {t.questions} вопр.</span>
-                          </div>
-                          <button className="w-full py-1.5 text-[11px] font-semibold text-zharyq-dark border border-zharyq-border rounded-lg hover:bg-gray-50 transition-colors">
-                            Назначить классу
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -735,10 +760,54 @@ export default function Psychologist() {
                   </div>
                 ))}
               </div>
-              <button className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-colors" style={{ background: 'var(--color-accent)' }}>
+              <button className="w-full py-2.5 rounded-xl text-white text-sm font-semibold transition-colors mb-5" style={{ background: 'var(--color-accent)' }}>
                 <Calendar size={16} className="inline mr-2" />
                 Назначить сессию
               </button>
+
+              {/* Test Results */}
+              <div className="border-t border-zharyq-border pt-5">
+                <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Результаты тестов</p>
+                {userTestResults.length === 0 ? (
+                  <p className="text-xs text-zharyq-gray text-center py-3">Нет результатов</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {userTestResults.map(r => {
+                      const levelStyle = r.overall_level === 'low' ? 'text-red-600 bg-red-50 border-red-100'
+                        : r.overall_level === 'medium' ? 'text-amber-600 bg-amber-50 border-amber-100'
+                        : 'text-green-700 bg-green-50 border-green-100'
+                      const levelLabel = r.overall_level === 'low' ? 'Низкий' : r.overall_level === 'medium' ? 'Средний' : 'Высокий'
+                      return (
+                        <div key={r.id} className="border border-zharyq-border rounded-xl p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-medium">{r.test_title}</p>
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${levelStyle}`}>{levelLabel}</span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-1 text-center">
+                            <div>
+                              <p className="text-[9px] text-zharyq-gray">Общий</p>
+                              <p className="text-sm font-bold">{r.total_score}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-zharyq-gray">Вовлеч.</p>
+                              <p className="text-sm font-bold">{r.involvement_score}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-zharyq-gray">Контроль</p>
+                              <p className="text-sm font-bold">{r.control_score}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-zharyq-gray">Риск</p>
+                              <p className="text-sm font-bold">{r.risk_score}</p>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-zharyq-gray mt-2">{new Date(r.created_at).toLocaleDateString('ru-RU')}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </>
         )}

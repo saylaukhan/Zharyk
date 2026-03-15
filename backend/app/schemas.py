@@ -320,3 +320,57 @@ class StudentMetrics(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Test schemas ──────────────────────────────────────────────
+
+class TestQuestionOut(BaseModel):
+    id: int
+    position: int
+    text: str
+    is_reverse: bool
+    subscale: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TestOut(BaseModel):
+    id: int
+    slug: str
+    title: str
+    description: Optional[str] = None
+    duration_minutes: int = 15
+    questions_count: int = 0
+    is_active: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+class TestDetailOut(TestOut):
+    questions: List[TestQuestionOut] = []
+
+
+class TestSubmit(BaseModel):
+    answers: dict  # {question_id: answer_value (0-3)}
+
+
+class TestResultOut(BaseModel):
+    id: int
+    user_id: int
+    test_id: int
+    test_title: Optional[str] = None
+    total_score: int = 0
+    involvement_score: int = 0
+    control_score: int = 0
+    risk_score: int = 0
+    overall_level: Optional[str] = None
+    involvement_level: Optional[str] = None
+    control_level: Optional[str] = None
+    risk_level: Optional[str] = None
+    recommendations: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

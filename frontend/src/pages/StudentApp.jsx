@@ -5,7 +5,8 @@ import {
   Bell, GraduationCap, Paperclip, Mic, ArrowUp, FileText, Camera,
   ArrowLeft, Search, Video, Clock, Layers, Headphones, Activity,
   Zap, BatteryLow, Heart, Rocket, Brain, SearchX, Flame, Sun,
-  BookOpenCheck, Trophy, BarChart, User, MessageCircle, ClipboardList, LogOut
+  BookOpenCheck, Trophy, BarChart, User, MessageCircle, ClipboardList, LogOut,
+  ChevronRight, ChevronLeft, CheckCircle, Target, Shield, AlertTriangle
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { Line, Radar } from 'react-chartjs-2'
@@ -15,7 +16,7 @@ import {
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
-import { fetchUserMetrics } from '../api/api'
+import { fetchUserMetrics, fetchTests, fetchTestDetail, submitTest, fetchMyTestResults } from '../api/api'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend, RadialLinearScale)
 
@@ -34,18 +35,17 @@ const DEFAULT_META = { icon: BookOpen, iconColor: 'text-zharyq-gray', bg: 'bg-gr
 const FILTERS = ['all', 'Стресс', 'Выгорание', 'Эмоции', 'Мотивация', 'Тревожность']
 const FILTER_LABELS = { all: 'Все', 'Стресс': 'Стресс', 'Выгорание': 'Выгорание', 'Эмоции': 'Эмоции', 'Мотивация': 'Мотивация', 'Тревожность': 'Тревожность' }
 
-const AVAILABLE_TESTS = [
-  { id: 'psm25', title: 'Уровень стресса (PSM-25)', desc: 'Оценка уровня психологического стресса.', duration: '5-7 мин', questions: 25, icon: Zap, color: 'text-zharyq-orange', bg: 'bg-orange-50' },
-  { id: 'beck', title: 'Шкала тревожности Бека', desc: 'Клиническая оценка уровня тревожности.', duration: '10 мин', questions: 21, icon: Brain, color: 'text-violet-500', bg: 'bg-violet-50' },
-  { id: 'burnout', title: 'Тест на выгорание (MBI)', desc: 'Анализ эмоционального истощения.', duration: '10-15 мин', questions: 22, icon: BatteryLow, color: 'text-amber-500', bg: 'bg-amber-50' },
-]
-
-const TEST_HISTORY = [
-  { date: '13 мар 2025', test: 'Уровень стресса', result: 'Средний', resultClass: 'text-amber-600 bg-amber-50 border-amber-100', rec: 'Курс «Управление стрессом»' },
-  { date: '10 мар 2025', test: 'Тест на выгорание', result: 'Норма', resultClass: 'text-green-700 bg-green-50 border-green-100', rec: 'Продолжайте отдыхать' },
-  { date: '5 мар 2025', test: 'Уровень тревожности', result: 'Высокий', resultClass: 'text-red-600 bg-red-50 border-red-100', rec: 'Дыхательные практики' },
-  { date: '28 фев 2025', test: 'Мотивация', result: 'Высокая', resultClass: 'text-zharyq-teal bg-zharyq-teal-light border-teal-100', rec: 'Поддерживайте ритм' },
-  { date: '20 фев 2025', test: 'Эмоциональный фон', result: 'Средний', resultClass: 'text-amber-600 bg-amber-50 border-amber-100', rec: 'Курс «Эмоц. интеллект»' },
+const LEVEL_LABELS = { low: 'Низкий', medium: 'Средний', high: 'Высокий' }
+const LEVEL_STYLES = {
+  low: 'text-red-600 bg-red-50 border-red-100',
+  medium: 'text-amber-600 bg-amber-50 border-amber-100',
+  high: 'text-green-700 bg-green-50 border-green-100',
+}
+const ANSWER_OPTIONS = [
+  { value: 0, label: 'Нет' },
+  { value: 1, label: 'Скорее нет, чем да' },
+  { value: 2, label: 'Скорее да, чем нет' },
+  { value: 3, label: 'Да' },
 ]
 
 function getChartColors(isDark) {
@@ -68,6 +68,16 @@ export default function StudentApp() {
   const [apiCourses, setApiCourses] = useState([])
   const [coursesLoading, setCoursesLoading] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+
+  // ── Test state ──
+  const [availableTests, setAvailableTests] = useState([])
+  const [testHistory, setTestHistory] = useState([])
+  const [activeTest, setActiveTest] = useState(null)        // full test with questions
+  const [testAnswers, setTestAnswers] = useState({})        // { questionId: value }
+  const [currentQ, setCurrentQ] = useState(0)               // current question index
+  const [testResult, setTestResult] = useState(null)         // result after submit
+  const [testLoading, setTestLoading] = useState(false)
+  const [testSubmitting, setTestSubmitting] = useState(false)
   
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
@@ -83,6 +93,13 @@ export default function StudentApp() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Load test history on mount for the right sidebar
+  useEffect(() => {
+    fetchMyTestResults()
+      .then(setTestHistory)
+      .catch(() => setTestHistory([]))
+  }, [])
+
   useEffect(() => {
     if (view === 'courses') {
       setCoursesLoading(true)
@@ -92,7 +109,63 @@ export default function StudentApp() {
         .catch(console.error)
         .finally(() => setCoursesLoading(false))
     }
+    if (view === 'tests') {
+      setTestLoading(true)
+      Promise.all([fetchTests(), fetchMyTestResults().catch(() => [])])
+        .then(([tests, results]) => {
+          setAvailableTests(tests)
+          setTestHistory(results)
+        })
+        .catch(console.error)
+        .finally(() => setTestLoading(false))
+    }
   }, [view])
+
+  // ── Test flow helpers ──
+  const startTest = async (testId) => {
+    setTestLoading(true)
+    try {
+      const detail = await fetchTestDetail(testId)
+      setActiveTest(detail)
+      setTestAnswers({})
+      setCurrentQ(0)
+      setTestResult(null)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setTestLoading(false)
+    }
+  }
+
+  const answerQuestion = (qId, value) => {
+    setTestAnswers(prev => ({ ...prev, [qId]: value }))
+  }
+
+  const handleSubmitTest = async () => {
+    if (!activeTest) return
+    setTestSubmitting(true)
+    try {
+      const result = await submitTest(activeTest.id, testAnswers)
+      setTestResult(result)
+      // refresh metrics after test
+      if (authUser?.id) {
+        fetchUserMetrics(authUser.id).then(setMetrics).catch(console.error)
+      }
+      // refresh test history
+      fetchMyTestResults().catch(() => []).then(setTestHistory)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setTestSubmitting(false)
+    }
+  }
+
+  const exitTest = () => {
+    setActiveTest(null)
+    setTestResult(null)
+    setTestAnswers({})
+    setCurrentQ(0)
+  }
 
   const handleLogout = () => {
     logout()
@@ -350,59 +423,267 @@ export default function StudentApp() {
         {view === 'tests' && (
           <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark animate-fade-in-up">
             <div className="max-w-3xl mx-auto">
-              <div className="flex items-center gap-3 mb-8">
-                <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
-                <h1 className="text-xl font-semibold">Доступные тесты</h1>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                {AVAILABLE_TESTS.map(t => (
-                  <div key={t.id} className="border border-zharyq-border rounded-2xl p-5 hover:border-zharyq-gray transition-colors cursor-pointer group flex flex-col h-full">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className={`w-10 h-10 rounded-xl ${t.bg} flex items-center justify-center shrink-0`}>
-                        <t.icon size={20} className={t.color} />
+              {/* ── RESULT SCREEN ── */}
+              {testResult && (
+                <div className="animate-fade-in-up">
+                  <div className="flex items-center gap-3 mb-6">
+                    <button onClick={exitTest} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
+                    <h1 className="text-xl font-semibold">Результаты теста</h1>
+                  </div>
+
+                  <div className="border border-zharyq-border rounded-2xl p-6 mb-6 bg-zharyq-bg">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-12 h-12 rounded-xl bg-zharyq-teal-light flex items-center justify-center">
+                        <CheckCircle size={24} className="text-zharyq-teal" />
                       </div>
                       <div>
-                        <h4 className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">{t.title}</h4>
-                        <p className="text-xs text-zharyq-gray mt-1 leading-relaxed">{t.desc}</p>
+                        <h2 className="text-lg font-semibold">Тест пройден!</h2>
+                        <p className="text-xs text-zharyq-gray">{testResult.test_title}</p>
                       </div>
                     </div>
-                    <div className="mt-auto flex items-center justify-between text-[11px] text-zharyq-gray border-t border-zharyq-border pt-3">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1"><Clock size={12} /> {t.duration}</span>
-                        <span className="flex items-center gap-1"><Layers size={12} /> {t.questions} вопросов</span>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                      <div className="border border-zharyq-border rounded-xl p-3 bg-white">
+                        <p className="text-[10px] text-zharyq-gray uppercase tracking-wide mb-1">Общий балл</p>
+                        <p className="text-2xl font-bold text-zharyq-dark">{testResult.total_score}</p>
+                        <span className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full border mt-1 ${LEVEL_STYLES[testResult.overall_level] || ''}`}>
+                          {LEVEL_LABELS[testResult.overall_level] || testResult.overall_level}
+                        </span>
                       </div>
-                      <button className="text-zharyq-orange font-semibold hover:underline">Пройти</button>
+                      {[
+                        { label: 'Вовлечённость', score: testResult.involvement_score, level: testResult.involvement_level, icon: Target },
+                        { label: 'Контроль', score: testResult.control_score, level: testResult.control_level, icon: Shield },
+                        { label: 'Принятие риска', score: testResult.risk_score, level: testResult.risk_level, icon: Zap },
+                      ].map(s => (
+                        <div key={s.label} className="border border-zharyq-border rounded-xl p-3 bg-white">
+                          <p className="text-[10px] text-zharyq-gray uppercase tracking-wide mb-1 flex items-center gap-1">
+                            <s.icon size={10} /> {s.label}
+                          </p>
+                          <p className="text-2xl font-bold text-zharyq-dark">{s.score}</p>
+                          <span className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full border mt-1 ${LEVEL_STYLES[s.level] || ''}`}>
+                            {LEVEL_LABELS[s.level] || s.level}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Interpretation */}
+                    <div className="border border-zharyq-border rounded-xl p-4 bg-white mb-4">
+                      <h3 className="text-sm font-semibold mb-2">Интерпретация</h3>
+                      <p className="text-xs text-zharyq-gray leading-relaxed">
+                        {testResult.overall_level === 'high' && 'У вас высокий уровень жизнестойкости. Вы хорошо справляетесь со стрессом, уверены в себе и открыты к новому опыту. Продолжайте поддерживать свое психологическое здоровье!'}
+                        {testResult.overall_level === 'medium' && 'У вас средний уровень жизнестойкости. Вы в целом неплохо справляетесь со стрессом, но некоторые области можно укрепить. Рекомендуем пройти курсы по управлению стрессом и развитию контроля.'}
+                        {testResult.overall_level === 'low' && 'Ваш уровень жизнестойкости ниже среднего. Это означает, что стрессовые ситуации могут быть для вас сложными. Рекомендуем обратиться к психологу и пройти курсы по управлению стрессом и развитию эмоциональной устойчивости.'}
+                      </p>
+                    </div>
+
+                    {/* Recommendations */}
+                    {testResult.recommendations && (() => {
+                      try {
+                        const recs = JSON.parse(testResult.recommendations)
+                        if (recs.length > 0) return (
+                          <div>
+                            <h3 className="text-sm font-semibold mb-3">Рекомендованные курсы</h3>
+                            <div className="flex flex-col gap-2">
+                              {recs.map(r => (
+                                <div key={r.id} onClick={() => navigate(`/course/${r.id}`)} className="border border-zharyq-border rounded-xl p-3 bg-white flex items-center gap-3 hover:border-zharyq-orange transition-colors cursor-pointer group">
+                                  <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+                                    <BookOpen size={16} className="text-zharyq-orange" />
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="text-sm font-medium group-hover:text-zharyq-orange transition-colors">{r.title}</p>
+                                    <p className="text-[10px] text-zharyq-gray">{r.category}</p>
+                                  </div>
+                                  <ChevronRight size={16} className="text-zharyq-gray" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      } catch { return null }
+                      return null
+                    })()}
+                  </div>
+
+                  <button onClick={exitTest} className="w-full py-3 rounded-xl text-white text-sm font-semibold transition-colors" style={{ background: 'var(--color-accent)' }}>
+                    Вернуться к тестам
+                  </button>
+                </div>
+              )}
+
+              {/* ── ACTIVE TEST (question by question) ── */}
+              {activeTest && !testResult && (
+                <div className="animate-fade-in-up">
+                  <div className="flex items-center gap-3 mb-6">
+                    <button onClick={exitTest} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
+                    <div className="flex-1">
+                      <h1 className="text-lg font-semibold">{activeTest.title}</h1>
+                      <p className="text-xs text-zharyq-gray">Вопрос {currentQ + 1} из {activeTest.questions.length}</p>
                     </div>
                   </div>
-                ))}
-              </div>
 
-              <div className="border border-zharyq-border rounded-2xl overflow-hidden">
-                <div className="px-5 py-4 border-b border-zharyq-border">
-                  <h2 className="text-sm font-semibold">История прохождений</h2>
+                  {/* Progress bar */}
+                  <div className="w-full bg-gray-100 rounded-full h-1.5 mb-8">
+                    <div className="bg-zharyq-orange h-1.5 rounded-full transition-all duration-300" style={{ width: `${((currentQ + 1) / activeTest.questions.length) * 100}%` }} />
+                  </div>
+
+                  {/* Question */}
+                  {activeTest.questions[currentQ] && (
+                    <div className="border border-zharyq-border rounded-2xl p-6 mb-6 bg-zharyq-bg">
+                      <p className="text-xs text-zharyq-gray mb-2">Вопрос {activeTest.questions[currentQ].position}</p>
+                      <p className="text-base font-medium mb-6 leading-relaxed">{activeTest.questions[currentQ].text}</p>
+
+                      <div className="flex flex-col gap-2">
+                        {ANSWER_OPTIONS.map(opt => {
+                          const qId = activeTest.questions[currentQ].id
+                          const isSelected = testAnswers[qId] === opt.value
+                          return (
+                            <button
+                              key={opt.value}
+                              onClick={() => answerQuestion(qId, opt.value)}
+                              className={`w-full text-left px-4 py-3 rounded-xl text-sm border transition-all ${
+                                isSelected
+                                  ? 'border-zharyq-orange bg-orange-50 text-zharyq-orange font-medium'
+                                  : 'border-zharyq-border bg-white hover:border-zharyq-gray text-zharyq-dark'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Navigation */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setCurrentQ(Math.max(0, currentQ - 1))}
+                      disabled={currentQ === 0}
+                      className="flex items-center gap-1 px-4 py-2.5 border border-zharyq-border rounded-xl text-sm text-zharyq-gray hover:text-zharyq-dark hover:border-zharyq-gray disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronLeft size={16} /> Назад
+                    </button>
+                    <div className="flex-1" />
+                    {currentQ < activeTest.questions.length - 1 ? (
+                      <button
+                        onClick={() => setCurrentQ(currentQ + 1)}
+                        disabled={testAnswers[activeTest.questions[currentQ]?.id] === undefined}
+                        className="flex items-center gap-1 px-6 py-2.5 rounded-xl text-sm font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        style={{ background: 'var(--color-accent)' }}
+                      >
+                        Далее <ChevronRight size={16} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleSubmitTest}
+                        disabled={Object.keys(testAnswers).length < activeTest.questions.length || testSubmitting}
+                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        style={{ background: 'var(--color-accent)' }}
+                      >
+                        {testSubmitting ? 'Обработка...' : 'Завершить тест'}
+                        <CheckCircle size={16} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Question dots */}
+                  <div className="flex flex-wrap gap-1.5 mt-6 justify-center">
+                    {activeTest.questions.map((q, i) => (
+                      <button
+                        key={q.id}
+                        onClick={() => setCurrentQ(i)}
+                        className={`w-6 h-6 rounded-full text-[9px] font-bold border transition-all ${
+                          i === currentQ
+                            ? 'border-zharyq-orange bg-zharyq-orange text-white'
+                            : testAnswers[q.id] !== undefined
+                              ? 'border-zharyq-teal bg-zharyq-teal-light text-zharyq-teal'
+                              : 'border-zharyq-border bg-white text-zharyq-gray hover:border-zharyq-gray'
+                        }`}
+                      >
+                        {i + 1}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-zharyq-border bg-zharyq-bg/50 text-zharyq-dark">
-                        {['Дата', 'Тест', 'Результат'].map(h => (
-                          <th key={h} className="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">{h}</th>
+              )}
+
+              {/* ── TEST LIST (no active test) ── */}
+              {!activeTest && !testResult && (
+                <>
+                  <div className="flex items-center gap-3 mb-8">
+                    <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
+                    <h1 className="text-xl font-semibold">Доступные тесты</h1>
+                  </div>
+
+                  {testLoading ? (
+                    <div className="text-center py-16 text-zharyq-gray text-sm">Загрузка...</div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                        {availableTests.map(t => (
+                          <div key={t.id} className="border border-zharyq-border rounded-2xl p-5 hover:border-zharyq-gray transition-colors cursor-pointer group flex flex-col h-full">
+                            <div className="flex items-start gap-3 mb-4">
+                              <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
+                                <Zap size={20} className="text-zharyq-orange" />
+                              </div>
+                              <div>
+                                <h4 className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">{t.title}</h4>
+                                <p className="text-xs text-zharyq-gray mt-1 leading-relaxed">{t.description}</p>
+                              </div>
+                            </div>
+                            <div className="mt-auto flex items-center justify-between text-[11px] text-zharyq-gray border-t border-zharyq-border pt-3">
+                              <div className="flex items-center gap-3">
+                                <span className="flex items-center gap-1"><Clock size={12} /> {t.duration_minutes} мин</span>
+                                <span className="flex items-center gap-1"><Layers size={12} /> {t.questions_count} вопросов</span>
+                              </div>
+                              <button onClick={() => startTest(t.id)} className="text-zharyq-orange font-semibold hover:underline">Пройти</button>
+                            </div>
+                          </div>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {TEST_HISTORY.map((row, i) => (
-                        <tr key={i} className="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
-                          <td className="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">{row.date}</td>
-                          <td className="px-5 py-3.5 font-medium text-xs">{row.test}</td>
-                          <td className="px-5 py-3.5"><span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${row.resultClass} border px-2 py-0.5 rounded-full`}>{row.result}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                      </div>
+
+                      {/* Test history */}
+                      <div className="border border-zharyq-border rounded-2xl overflow-hidden">
+                        <div className="px-5 py-4 border-b border-zharyq-border">
+                          <h2 className="text-sm font-semibold">История прохождений</h2>
+                        </div>
+                        {testHistory.length === 0 ? (
+                          <p className="px-5 py-6 text-sm text-center text-zharyq-gray">Вы ещё не прошли ни одного теста</p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b border-zharyq-border bg-zharyq-bg/50 text-zharyq-dark">
+                                  {['Дата', 'Тест', 'Балл', 'Уровень'].map(h => (
+                                    <th key={h} className="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {testHistory.map((row, i) => (
+                                  <tr key={i} className="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
+                                    <td className="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">{new Date(row.created_at).toLocaleDateString('ru-RU')}</td>
+                                    <td className="px-5 py-3.5 font-medium text-xs">{row.test_title}</td>
+                                    <td className="px-5 py-3.5 text-xs font-bold">{row.total_score}</td>
+                                    <td className="px-5 py-3.5">
+                                      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold border px-2 py-0.5 rounded-full ${LEVEL_STYLES[row.overall_level] || ''}`}>
+                                        {LEVEL_LABELS[row.overall_level] || row.overall_level}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
             </div>
           </div>
         )}
@@ -516,17 +797,48 @@ export default function StudentApp() {
 
       {/* RIGHT SIDEBAR */}
       <aside className="hidden lg:flex flex-col w-[30%] min-w-[300px] max-w-[360px] bg-white border-l border-zharyq-border p-6 h-full overflow-y-auto">
-        <div className="bg-zharyq-teal-light border border-teal-200 rounded-xl p-4 mb-6 flex items-start gap-3">
-          <span className="flex w-3 h-3 rounded-full bg-zharyq-teal mt-0.5 shrink-0" />
-          <div>
-            <h3 className="text-sm font-semibold text-zharyq-teal mb-1">
-              Держитесь молодцом!
-            </h3>
-            <p className="text-xs text-teal-700/80 leading-relaxed">
-              Ваш профиль обновляется по мере чекинов. Продолжайте в том же духе.
-            </p>
-          </div>
-        </div>
+        {/* Dynamic status banner based on latest test */}
+        {(() => {
+          const latest = testHistory[0]
+          if (!latest) return (
+            <div className="bg-zharyq-teal-light border border-teal-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+              <span className="flex w-3 h-3 rounded-full bg-zharyq-teal mt-0.5 shrink-0" />
+              <div>
+                <h3 className="text-sm font-semibold text-zharyq-teal mb-1">Добро пожаловать!</h3>
+                <p className="text-xs text-teal-700/80 leading-relaxed">Пройдите тест, чтобы увидеть ваш психологический профиль и получить рекомендации.</p>
+              </div>
+            </div>
+          )
+          if (latest.overall_level === 'high') return (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+              <span className="flex w-3 h-3 rounded-full bg-green-500 mt-0.5 shrink-0" />
+              <div>
+                <h3 className="text-sm font-semibold text-green-700 mb-1">Отличный результат!</h3>
+                <p className="text-xs text-green-600/80 leading-relaxed">Ваш уровень жизнестойкости высокий. Вы хорошо справляетесь со стрессом. Продолжайте в том же духе!</p>
+              </div>
+            </div>
+          )
+          if (latest.overall_level === 'medium') return (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+              <span className="flex w-3 h-3 rounded-full bg-amber-500 mt-0.5 shrink-0" />
+              <div>
+                <h3 className="text-sm font-semibold text-amber-700 mb-1">Можно улучшить</h3>
+                <p className="text-xs text-amber-600/80 leading-relaxed">У вас средний уровень жизнестойкости. Рекомендуем пройти курсы для укрепления стрессоустойчивости.</p>
+              </div>
+            </div>
+          )
+          return (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+              <span className="flex w-3 h-3 rounded-full bg-red-500 mt-0.5 shrink-0" />
+              <div>
+                <h3 className="text-sm font-semibold text-red-700 mb-1">Требуется внимание</h3>
+                <p className="text-xs text-red-600/80 leading-relaxed">Ваш уровень жизнестойкости ниже среднего. Обратитесь к психологу и пройдите рекомендованные курсы.</p>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Psychological profile radar */}
         <div className="mb-8 text-zharyq-dark">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold">Психологический профиль</h3>
@@ -535,29 +847,62 @@ export default function StudentApp() {
           <div className="w-full aspect-square">
             <Radar data={radarData} options={radarOptions} />
           </div>
+
+          {/* Show latest test subscale summary */}
+          {testHistory[0] && (
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              {[
+                { label: 'Вовлечённость', value: testHistory[0].involvement_score, level: testHistory[0].involvement_level },
+                { label: 'Контроль', value: testHistory[0].control_score, level: testHistory[0].control_level },
+                { label: 'Принятие риска', value: testHistory[0].risk_score, level: testHistory[0].risk_level },
+              ].map(s => (
+                <div key={s.label} className="border border-zharyq-border rounded-lg p-2">
+                  <p className="text-[9px] text-zharyq-gray">{s.label}</p>
+                  <p className="text-lg font-bold">{s.value}</p>
+                  <span className={`inline-flex text-[8px] font-semibold px-1.5 py-0.5 rounded-full border ${LEVEL_STYLES[s.level] || ''}`}>
+                    {LEVEL_LABELS[s.level] || '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Dynamic recommendations from test results */}
         <div className="text-zharyq-dark">
           <h3 className="text-sm font-semibold mb-4">Рекомендации для вас</h3>
-          {[
-            { icon: Zap, bg: 'bg-orange-50', color: 'text-zharyq-orange', title: 'Управление стрессом', sub: 'Видео • 5 минут', progress: 40 },
-            { icon: Brain, bg: 'bg-blue-50', color: 'text-blue-500', title: 'Фокус и концентрация', sub: 'Упражнение • 3 минуты', progress: 0 },
-          ].map((r, i) => (
-            <div key={i} className="border border-zharyq-border rounded-xl p-4 mb-3 hover:border-zharyq-gray transition-colors cursor-pointer group">
-              <div className="flex items-start gap-3 mb-3">
-                <div className={`w-10 h-10 rounded-lg ${r.bg} flex items-center justify-center shrink-0`}>
-                  <r.icon size={20} className={r.color} />
+          {(() => {
+            const latest = testHistory[0]
+            let recs = []
+            if (latest?.recommendations) {
+              try { recs = JSON.parse(latest.recommendations) } catch {}
+            }
+            if (recs.length > 0) {
+              return recs.map(r => (
+                <div key={r.id} onClick={() => navigate(`/course/${r.id}`)} className="border border-zharyq-border rounded-xl p-4 mb-3 hover:border-zharyq-orange transition-colors cursor-pointer group">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+                      <BookOpen size={20} className="text-zharyq-orange" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium group-hover:text-zharyq-orange transition-colors">{r.title}</h4>
+                      <p className="text-xs text-zharyq-gray mt-0.5">{r.category}</p>
+                    </div>
+                    <ChevronRight size={16} className="text-zharyq-gray mt-1 shrink-0" />
+                  </div>
                 </div>
-                <div>
-                  <h4 className={`text-sm font-medium group-hover:${r.color} transition-colors`}>{r.title}</h4>
-                  <p className="text-xs text-zharyq-gray mt-0.5">{r.sub}</p>
-                </div>
+              ))
+            }
+            return (
+              <div className="border border-dashed border-zharyq-border rounded-xl p-4 text-center">
+                <ClipboardList size={24} className="mx-auto mb-2 text-zharyq-gray opacity-40" />
+                <p className="text-xs text-zharyq-gray">Пройдите тест, чтобы получить персональные рекомендации</p>
+                <button onClick={() => setView('tests')} className="text-xs font-semibold text-zharyq-orange mt-2 hover:underline">
+                  Перейти к тестам →
+                </button>
               </div>
-              <div className="w-full bg-gray-100 rounded-full h-1.5 mb-1">
-                <div className="bg-zharyq-teal h-1.5 rounded-full" style={{ width: `${r.progress}%` }} />
-              </div>
-              <p className="text-[10px] text-zharyq-gray text-right">{r.progress === 0 ? 'Не начато' : `Пройдено ${r.progress}%`}</p>
-            </div>
-          ))}
+            )
+          })()}
         </div>
       </aside>
 

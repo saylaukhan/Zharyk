@@ -36,3 +36,15 @@ export const fetchDirectorDashboard = () => request('/analytics/director-dashboa
 export const fetchUserCheckins = (userId) => request(`/checkins/${userId}`); // Need to verify if it's /checkins/user/${userId} or something else. I'll use a generic one or assume /checkins/user/:user_id
 export const fetchUserMetrics = (userId) => request(`/analytics/user/${userId}`);
 export const fetchCourses = () => request('/courses/');
+
+// ── Tests ────────────────────────────────────────────────────
+export const fetchTests = () => request('/tests/');
+export const fetchTestDetail = (testId) => request(`/tests/${testId}`);
+export const submitTest = (testId, answers) =>
+  request(`/tests/${testId}/submit`, {
+    method: 'POST',
+    body: JSON.stringify({ answers }),
+  });
+export const fetchMyTestResults = () => request('/tests/results/me');
+export const fetchUserTestResults = (userId) => request(`/tests/results/user/${userId}`);
+

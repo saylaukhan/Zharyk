@@ -55,6 +55,7 @@ class User(Base):
     sessions = relationship("TherapySession", back_populates="user", foreign_keys="TherapySession.user_id")
     notes = relationship("Note", back_populates="user", foreign_keys="Note.user_id")
     course_progress = relationship("CourseProgress", back_populates="user")
+    test_results = relationship("TestResult", back_populates="user")
 
 
 class CheckIn(Base):
@@ -262,3 +263,65 @@ class OrgMetric(Base):
     absence_reduction = Column(Float, nullable=True)
     parent_engagement = Column(Float, nullable=True)
     recorded_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ── Testing system ────────────────────────────────────────────
+
+class Test(Base):
+    __tablename__ = "tests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String, unique=True, index=True, nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    duration_minutes = Column(Integer, default=15)
+    questions_count = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    questions = relationship(
+        "TestQuestion",
+        back_populates="test",
+        cascade="all, delete-orphan",
+        order_by="TestQuestion.position",
+    )
+    results = relationship("TestResult", back_populates="test", cascade="all, delete-orphan")
+
+
+class TestQuestion(Base):
+    __tablename__ = "test_questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    test_id = Column(Integer, ForeignKey("tests.id", ondelete="CASCADE"), nullable=False)
+    position = Column(Integer, nullable=False)
+    text = Column(Text, nullable=False)
+    is_reverse = Column(Boolean, default=False, nullable=False)
+    subscale = Column(String, nullable=True)  # involvement / control / risk_taking
+
+    test = relationship("Test", back_populates="questions")
+
+
+class TestResult(Base):
+    __tablename__ = "test_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    test_id = Column(Integer, ForeignKey("tests.id", ondelete="CASCADE"), nullable=False)
+
+    total_score = Column(Integer, default=0)
+    involvement_score = Column(Integer, default=0)   # Вовлечённость
+    control_score = Column(Integer, default=0)        # Контроль
+    risk_score = Column(Integer, default=0)           # Принятие риска
+
+    overall_level = Column(String, nullable=True)     # low / medium / high
+    involvement_level = Column(String, nullable=True)
+    control_level = Column(String, nullable=True)
+    risk_level = Column(String, nullable=True)
+
+    answers_json = Column(Text, nullable=True)        # JSON string of answers
+    recommendations = Column(Text, nullable=True)      # JSON string of recommended courses
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="test_results")
+    test = relationship("Test", back_populates="results")
