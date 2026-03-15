@@ -127,11 +127,11 @@ class Note(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    psychologist_id = Column(Integer, ForeignKey("users.id"))
-    content = Column(Text)
-    tags = Column(String, nullable=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    images = Column(Text, nullable=True)  # JSON array of image paths
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 
     user = relationship("User", back_populates="notes", foreign_keys=[user_id])
 

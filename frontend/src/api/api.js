@@ -32,6 +32,38 @@ export const createSession = (data) => request('/sessions/', { method: 'POST', b
 export const updateSession = (id, data) => request(`/sessions/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteSession = (id) => request(`/sessions/${id}`, { method: 'DELETE' });
 export const fetchNotes = () => request('/notes/');
+export const fetchNote = (id) => request(`/notes/${id}`);
+export const createNote = (formData) => {
+  const token = localStorage.getItem('token');
+  return fetch(`${API_URL}/notes/`, {
+    method: 'POST',
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: formData,
+  }).then(async (res) => {
+    if (!res.ok) {
+      let msg = res.statusText;
+      try { const e = await res.json(); if (e.detail) msg = e.detail; } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  });
+};
+export const updateNote = (id, formData) => {
+  const token = localStorage.getItem('token');
+  return fetch(`${API_URL}/notes/${id}`, {
+    method: 'PUT',
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: formData,
+  }).then(async (res) => {
+    if (!res.ok) {
+      let msg = res.statusText;
+      try { const e = await res.json(); if (e.detail) msg = e.detail; } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  });
+};
+export const deleteNote = (id) => request(`/notes/${id}`, { method: 'DELETE' });
 export const fetchOrgMetrics = () => request('/analytics/org');
 export const fetchSummary = () => request('/analytics/summary');
 export const fetchStressDistribution = () => request('/analytics/stress-distribution');

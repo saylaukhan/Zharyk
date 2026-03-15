@@ -130,14 +130,21 @@ class SessionOut(SessionCreate):
 
 
 class NoteCreate(BaseModel):
-    user_id: int
-    psychologist_id: int
-    content: str
-    tags: Optional[str] = None
+    title: str
+    description: Optional[str] = None
 
 
-class NoteOut(NoteCreate):
+class NoteUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
+class NoteOut(BaseModel):
     id: int
+    user_id: int
+    title: str
+    description: Optional[str] = None
+    images: Optional[List[str]] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

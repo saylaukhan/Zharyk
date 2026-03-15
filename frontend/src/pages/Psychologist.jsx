@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Search, AlertTriangle, Activity, CheckCircle, X, Plus,
   ClipboardList, Clock, Layers, Zap, Brain, BatteryLow, 
-  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles, Pencil, Trash2, BookOpen, Eye, Edit3
+  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles, Pencil, Trash2, BookOpen, Eye, Edit3, Image, Upload
 } from 'lucide-react'
 import { Radar } from 'react-chartjs-2'
 import {
@@ -19,7 +19,8 @@ import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { 
   fetchAlertsRich, fetchStudentsWithMetrics, fetchSessions, fetchNotes, fetchUserTestResults, fetchTests,
-  createSession, updateSession, deleteSession
+  createSession, updateSession, deleteSession,
+  createNote, updateNote, deleteNote
 } from '../api/api'
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
@@ -139,6 +140,17 @@ export default function Psychologist() {
   const [psyTests, setPsyTests] = useState([])
   const [psyTestsLoading, setPsyTestsLoading] = useState(false)
 
+  // Notes modal state
+  const [noteModalOpen, setNoteModalOpen] = useState(false)
+  const [noteModalMode, setNoteModalMode] = useState('create') // create | view | edit
+  const [selectedNote, setSelectedNote] = useState(null)
+  const [noteForm, setNoteForm] = useState({ title: '', description: '' })
+  const [noteImages, setNoteImages] = useState([]) // File objects for new uploads
+  const [noteExistingImages, setNoteExistingImages] = useState([]) // existing image URLs to keep
+  const [noteSaving, setNoteSaving] = useState(false)
+  const [noteDeleteConfirm, setNoteDeleteConfirm] = useState(false)
+  const [noteImagePreviews, setNoteImagePreviews] = useState([]) // preview URLs for new uploads
+
   useEffect(() => {
     Promise.all([
       fetchAlertsRich().catch(() => []),
@@ -153,6 +165,15 @@ export default function Psychologist() {
       setLoading(false)
     })
   }, [])
+
+  // Reload notes
+  const reloadNotes = useCallback(() => {
+    fetchNotes().then(setNotes).catch(console.error)
+  }, [])
+
+  useEffect(() => {
+    if (view === 'notes') reloadNotes()
+  }, [view, reloadNotes])
 
   // Reload sessions when switching to sessions view
   const reloadSessions = useCallback(() => {
@@ -281,6 +302,91 @@ export default function Psychologist() {
       form.reset();
     } catch (err) {
       alert('Ошибка при смене пароля: ' + err.message);
+    }
+  }
+
+  // Note handlers
+  const openNoteCreate = () => {
+    setNoteForm({ title: '', description: '' })
+    setNoteImages([])
+    setNoteExistingImages([])
+    setNoteImagePreviews([])
+    setSelectedNote(null)
+    setNoteModalMode('create')
+    setNoteModalOpen(true)
+    setNoteDeleteConfirm(false)
+  }
+
+  const openNoteView = (note) => {
+    setSelectedNote(note)
+    setNoteForm({ title: note.title, description: note.description || '' })
+    setNoteExistingImages(note.images || [])
+    setNoteImages([])
+    setNoteImagePreviews([])
+    setNoteModalMode('view')
+    setNoteModalOpen(true)
+    setNoteDeleteConfirm(false)
+  }
+
+  const switchNoteToEdit = () => {
+    setNoteModalMode('edit')
+  }
+
+  const handleNoteImageAdd = (e) => {
+    const files = Array.from(e.target.files)
+    setNoteImages(prev => [...prev, ...files])
+    const previews = files.map(f => URL.createObjectURL(f))
+    setNoteImagePreviews(prev => [...prev, ...previews])
+  }
+
+  const removeNoteNewImage = (idx) => {
+    setNoteImages(prev => prev.filter((_, i) => i !== idx))
+    setNoteImagePreviews(prev => {
+      URL.revokeObjectURL(prev[idx])
+      return prev.filter((_, i) => i !== idx)
+    })
+  }
+
+  const removeNoteExistingImage = (idx) => {
+    setNoteExistingImages(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  const handleNoteSave = async () => {
+    if (!noteForm.title.trim()) return
+    setNoteSaving(true)
+    try {
+      const fd = new FormData()
+      fd.append('title', noteForm.title)
+      fd.append('description', noteForm.description || '')
+      fd.append('user_id', String(authUser?.user_id || authUser?.id))
+
+      if (noteModalMode === 'edit' && selectedNote) {
+        fd.append('keep_images', JSON.stringify(noteExistingImages))
+        noteImages.forEach(img => fd.append('images', img))
+        await updateNote(selectedNote.id, fd)
+      } else {
+        noteImages.forEach(img => fd.append('images', img))
+        await createNote(fd)
+      }
+      setNoteModalOpen(false)
+      reloadNotes()
+    } catch (e) {
+      console.error(e)
+      alert('Ошибка при сохранении заметки: ' + e.message)
+    } finally {
+      setNoteSaving(false)
+    }
+  }
+
+  const handleNoteDelete = async () => {
+    if (!selectedNote) return
+    try {
+      await deleteNote(selectedNote.id)
+      setNoteModalOpen(false)
+      reloadNotes()
+    } catch (e) {
+      console.error(e)
+      alert('Ошибка при удалении заметки: ' + e.message)
     }
   }
 
@@ -499,6 +605,11 @@ export default function Psychologist() {
             {view === 'courses' && (
               <button onClick={() => navigate('/course-builder')} className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-xl transition-colors" style={{ background: 'var(--color-accent)' }}>
                 <Plus size={16} /> Создать курс
+              </button>
+            )}
+            {view === 'notes' && (
+              <button onClick={openNoteCreate} className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-xl transition-colors" style={{ background: 'var(--color-accent)' }}>
+                <Plus size={16} /> Создать заметку
               </button>
             )}
           </div>
@@ -725,30 +836,60 @@ export default function Psychologist() {
             {/* NOTES VIEW */}
             {view === 'notes' && (
               <div className="flex-1 overflow-y-auto p-6 text-zharyq-dark animate-fade-in-up">
-                <div className="max-w-3xl mx-auto">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-sm font-semibold">Клинические заметки</h2>
-                  </div>
-                  <div className="flex flex-col gap-3">
-                    {notes.map(n => (
-                      <div key={n.id} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer">
-                        <div className="flex items-start justify-between gap-3 mb-2">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-500`}>U{n.user_id}</div>
-                            <span className="text-sm font-semibold">Аноним #{n.user_id}</span>
+                <div className="max-w-4xl mx-auto">
+                  {notes.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 gap-3 text-zharyq-gray">
+                      <ClipboardList size={36} className="opacity-30" />
+                      <p className="text-sm">Заметок пока нет. Создайте первую!</p>
+                      <button onClick={openNoteCreate} className="text-sm font-medium text-white px-4 py-2 rounded-xl mt-2" style={{ background: 'var(--color-accent)' }}>
+                        <Plus size={14} className="inline mr-1" /> Создать заметку
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {notes.map(n => {
+                        const hasImages = n.images && n.images.length > 0
+                        return (
+                          <div key={n.id} onClick={() => openNoteView(n)} className="border border-zharyq-border rounded-2xl overflow-hidden hover:border-zharyq-gray transition-all cursor-pointer group hover:shadow-sm">
+                            {/* Image preview */}
+                            {hasImages ? (
+                              <div className="h-36 bg-zharyq-bg relative overflow-hidden">
+                                <img src={`http://localhost:8000${n.images[0]}`} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                {n.images.length > 1 && (
+                                  <span className="absolute bottom-2 right-2 text-[10px] font-semibold bg-black/50 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <Image size={10} /> +{n.images.length - 1}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="h-20 bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center">
+                                <FileText size={24} className="text-zharyq-orange opacity-30" />
+                              </div>
+                            )}
+                            <div className="p-4">
+                              <h4 className="text-sm font-semibold mb-1 truncate group-hover:text-zharyq-orange transition-colors">{n.title}</h4>
+                              {n.description && <p className="text-xs text-zharyq-gray mb-3 line-clamp-2">{n.description}</p>}
+                              <div className="flex items-center justify-between text-[11px] text-zharyq-gray pt-2 border-t border-zharyq-border">
+                                <span className="flex items-center gap-1">
+                                  <Clock size={11} />
+                                  {new Date(n.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </span>
+                                <span>{new Date(n.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
+                              </div>
+                            </div>
                           </div>
-                          <span className="text-[11px] text-zharyq-gray shrink-0">{timeAgo(n.created_at)}</span>
-                        </div>
-                        <p className="text-xs text-zharyq-gray leading-relaxed">{n.content}</p>
-                        {n.tags && (
-                          <div className="flex gap-2 mt-3">
-                            {n.tags.split(',').map(t => <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 break-words">{t.trim()}</span>)}
-                          </div>
-                        )}
+                        )
+                      })}
+                      {/* Add new note card */}
+                      <div
+                        onClick={openNoteCreate}
+                        className="border border-dashed border-zharyq-border rounded-2xl p-4 hover:border-zharyq-orange transition-colors cursor-pointer opacity-60 hover:opacity-100 flex flex-col items-center justify-center gap-2 text-zharyq-gray hover:text-zharyq-orange min-h-[200px]"
+                      >
+                        <Plus size={24} />
+                        <span className="text-xs">Новая заметка</span>
                       </div>
-                    ))}
-                    {notes.length === 0 && <p className="text-sm py-4 text-center text-zharyq-gray">Нет заметок</p>}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1233,6 +1374,139 @@ export default function Psychologist() {
                       style={{ background: 'var(--color-accent)' }}
                     >
                       {sessionSaving ? 'Сохранение...' : sessionModalMode === 'edit' ? 'Сохранить' : 'Назначить'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NOTE MODAL */}
+      {noteModalOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setNoteModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto text-zharyq-dark" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zharyq-border">
+              <h2 className="text-sm font-semibold">
+                {noteModalMode === 'create' ? 'Новая заметка' : noteModalMode === 'edit' ? 'Редактировать заметку' : 'Просмотр заметки'}
+              </h2>
+              <button onClick={() => setNoteModalOpen(false)} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><X size={20} /></button>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Заголовок</label>
+                {noteModalMode === 'view' ? (
+                  <p className="text-sm font-medium py-2">{noteForm.title}</p>
+                ) : (
+                  <input
+                    type="text" value={noteForm.title}
+                    onChange={e => setNoteForm(f => ({ ...f, title: e.target.value }))}
+                    placeholder="Заголовок заметки..."
+                    className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
+                  />
+                )}
+              </div>
+              
+              <div>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Содержание</label>
+                {noteModalMode === 'view' ? (
+                  <div className="text-sm py-2 text-zharyq-gray whitespace-pre-wrap">{noteForm.description || 'Нет описания'}</div>
+                ) : (
+                  <textarea
+                    value={noteForm.description}
+                    onChange={e => setNoteForm(f => ({ ...f, description: e.target.value }))}
+                    placeholder="Текст вашей заметки..."
+                    rows={6}
+                    className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none resize-none"
+                  />
+                )}
+              </div>
+
+              {/* Images Section */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-zharyq-gray">Фотографии</label>
+                  {noteModalMode !== 'view' && (
+                    <div>
+                      <input type="file" id="note-images-upload" multiple accept="image/*" className="hidden" onChange={handleNoteImageAdd} />
+                      <label htmlFor="note-images-upload" className="cursor-pointer text-xs font-medium text-zharyq-orange hover:text-orange-600 flex items-center gap-1 bg-orange-50 px-2 py-1 rounded-lg">
+                        <Upload size={12} /> Добавить
+                      </label>
+                    </div>
+                  )}
+                </div>
+                
+                {(noteExistingImages.length > 0 || noteImagePreviews.length > 0) ? (
+                  <div className="grid grid-cols-4 gap-2">
+                    {noteExistingImages.map((imgUrl, i) => (
+                      <div key={`exist-${i}`} className="relative aspect-square bg-zharyq-bg rounded-lg overflow-hidden border border-zharyq-border group">
+                        <img src={`http://localhost:8000${imgUrl}`} alt="preview" className="w-full h-full object-cover" />
+                        {noteModalMode !== 'view' && (
+                          <button onClick={() => removeNoteExistingImage(i)} className="absolute top-1 right-1 w-5 h-5 bg-black/50 hover:bg-red-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all">
+                            <X size={12} />
+                          </button>
+                        )}
+                        {noteModalMode === 'view' && (
+                           <a href={`http://localhost:8000${imgUrl}`} target="_blank" rel="noopener noreferrer" className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-all flex items-center justify-center opacity-0 hover:opacity-100">
+                             <Eye size={20} className="text-white drop-shadow-md" />
+                           </a>
+                        )}
+                      </div>
+                    ))}
+                    {noteImagePreviews.map((preview, i) => (
+                      <div key={`new-${i}`} className="relative aspect-square bg-zharyq-bg rounded-lg overflow-hidden border border-zharyq-border group ring-2 ring-zharyq-teal/30">
+                        <img src={preview} alt="preview" className="w-full h-full object-cover" />
+                        {noteModalMode !== 'view' && (
+                          <button onClick={() => removeNoteNewImage(i)} className="absolute top-1 right-1 w-5 h-5 bg-black/50 hover:bg-red-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all">
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-zharyq-gray italic">Нет прикрепленных фото</div>
+                )}
+              </div>
+
+              {/* Timestamp for view */}
+              {noteModalMode === 'view' && selectedNote && (
+                 <div className="flex items-center gap-2 mt-2 pt-4 border-t border-zharyq-border">
+                   <Clock size={12} className="text-zharyq-gray" />
+                   <span className="text-xs text-zharyq-gray">Создано: {new Date(selectedNote.created_at).toLocaleString('ru-RU')}</span>
+                 </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4 border-t border-zharyq-border">
+                {noteModalMode === 'view' ? (
+                  <>
+                    <button onClick={switchNoteToEdit} className="flex-1 flex items-center justify-center gap-2 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-dark hover:bg-zharyq-bg transition-colors">
+                      <Edit3 size={14} /> Редактировать
+                    </button>
+                    {!noteDeleteConfirm ? (
+                      <button onClick={() => setNoteDeleteConfirm(true)} className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center gap-2">
+                        <Trash2 size={14} /> Удалить
+                      </button>
+                    ) : (
+                      <button onClick={handleNoteDelete} className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors animate-pulse">
+                        Подтвердить удаление
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => setNoteModalOpen(false)} className="flex-1 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-gray bg-white hover:bg-zharyq-bg transition-colors">
+                      Отмена
+                    </button>
+                    <button
+                      onClick={handleNoteSave}
+                      disabled={noteSaving || !noteForm.title.trim()}
+                      className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
+                      style={{ background: 'var(--color-accent)' }}
+                    >
+                      {noteSaving ? 'Сохранение...' : noteModalMode === 'edit' ? 'Сохранить' : 'Создать'}
                     </button>
                   </>
                 )}

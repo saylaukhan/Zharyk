@@ -14,6 +14,7 @@ _MIGRATION_TABLES = [
     "course_modules",
     "course_progress",
     "courses",
+    "notes",
 ]
 with engine.connect() as conn:
     for table in _MIGRATION_TABLES:
@@ -29,6 +30,7 @@ Base.metadata.create_all(bind=engine)
 UPLOADS_DIR = Path(__file__).resolve().parents[1] / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 (UPLOADS_DIR / "videos").mkdir(exist_ok=True)
+(UPLOADS_DIR / "notes").mkdir(exist_ok=True)
 
 app = FastAPI(
     title="Zharyq API",
