@@ -240,6 +240,7 @@ export default function StudentApp() {
     { id: 'tests', icon: ClipboardList, label: 'Тесты' },
     { id: 'courses', icon: BookOpen, label: 'База курсов' },
     { id: 'analytics', icon: BarChart2, label: 'Моя аналитика' },
+    { id: 'about', icon: Info, label: 'О платформе' },
   ]
 
   const sendMessage = async (text) => {
@@ -510,7 +511,6 @@ export default function StudentApp() {
               {item.label}
             </button>
           ))}
-          <a href="#" className="nav-item"><Info size={16} />О платформе</a>
         </div>
         <div className="flex-1 overflow-y-auto pr-1">
           <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">История</p>
@@ -1021,6 +1021,59 @@ export default function StudentApp() {
             </div>
           </div>
         )}
+        {/* ABOUT PLATFORM VIEW */}
+        {view === 'about' && (
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 text-zharyq-dark animate-fade-in-up">
+            <div className="max-w-3xl mx-auto">
+              <div className="flex items-center gap-3 mb-8">
+                <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
+                <h1 className="text-2xl font-semibold">О платформе</h1>
+              </div>
+
+              <div className="bg-gradient-to-br from-zharyq-teal/10 to-blue-500/10 rounded-3xl p-8 mb-8 border border-zharyq-teal/20 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-zharyq-teal/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
+                <div className="relative z-10">
+                  <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center mb-6 border border-zharyq-border">
+                    <Sparkles size={32} className="text-zharyq-orange" />
+                  </div>
+                  <h2 className="text-2xl font-bold mb-3">Что такое Zharyq?</h2>
+                  <p className="text-sm text-zharyq-gray leading-relaxed max-w-2xl">
+                    Zharyq — это инновационная платформа психологической поддержки и мониторинга состояния учащихся. Наша цель — создать безопасную и поддерживающую среду для каждого, предупреждать эмоциональное выгорание и помогать в развитии жизнестойкости.
+                  </p>
+                </div>
+              </div>
+
+              <h3 className="text-lg font-semibold mb-6">Ключевые возможности</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
+                {[
+                  { icon: Brain, title: 'AI-Ассистент', desc: 'Круглосуточный интеллектуальный собеседник, готовый выслушать, проанализировать ваше состояние и дать первичные рекомендации.', color: 'text-violet-500', bg: 'bg-violet-50' },
+                  { icon: Shield, title: 'Конфиденциальность', desc: 'Все ваши тесты и переписки надежно защищены. Психолог видит только обобщенные метрики для оказания помощи.', color: 'text-green-500', bg: 'bg-green-50' },
+                  { icon: BookOpen, title: 'База курсов', desc: 'Персонально подобранные материалы: видео, статьи и упражнения, направленные на развитие эмоционального интеллекта.', color: 'text-blue-500', bg: 'bg-blue-50' },
+                  { icon: Activity, title: 'Мониторинг прогресса', desc: 'Наглядные дашборды, показывающие динамику вашего состояния, уровень стресса и мотивации во времени.', color: 'text-zharyq-orange', bg: 'bg-orange-50' },
+                ].map((feature, i) => (
+                  <div key={i} className="border border-zharyq-border rounded-2xl p-5 bg-white hover:border-zharyq-gray transition-colors">
+                    <div className={`w-12 h-12 rounded-xl ${feature.bg} flex items-center justify-center mb-4`}>
+                      <feature.icon size={24} className={feature.color} />
+                    </div>
+                    <h4 className="font-semibold text-sm mb-2">{feature.title}</h4>
+                    <p className="text-xs text-zharyq-gray leading-relaxed">{feature.desc}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border border-zharyq-border rounded-2xl p-6 bg-zharyq-bg flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-semibold text-sm mb-1">Версия платформы</h3>
+                  <p className="text-xs text-zharyq-gray">v1.2.0-beta</p>
+                </div>
+                <div className="text-xs text-zharyq-gray max-w-sm text-center sm:text-right">
+                  Разработано с заботой о психологическом благополучии.
+                  <br />© 2026 Команда Zharyq. Все права защищены.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* RIGHT SIDEBAR */}
@@ -1178,6 +1231,7 @@ export default function StudentApp() {
           { id: 'tests', icon: ClipboardList, label: 'Тесты' },
           { id: 'analytics', icon: BarChart2, label: 'Аналитика' },
           { id: 'courses', icon: BookOpen, label: 'Курсы' },
+          { id: 'about', icon: Info, label: 'Инфо' },
         ].map(item => (
           <button key={item.id} onClick={() => setView(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${view === item.id ? 'text-zharyq-orange' : 'text-zharyq-gray'}`}>
             <item.icon size={20} />
