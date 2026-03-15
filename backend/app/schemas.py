@@ -314,6 +314,9 @@ class StudentMetrics(BaseModel):
     created_at: datetime
     stress: float = 0
     motivation: float = 0
+    anxiety: float = 0
+    burnout: float = 0
+    emotion: float = 0
     sessions_count: int = 0
     courses_count: int = 0
     last_checkin_date: Optional[datetime] = None

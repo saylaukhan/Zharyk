@@ -22,6 +22,9 @@ def get_students_with_metrics(
             User,
             func.coalesce(func.max(UserMetric.stress), 0).label("stress"),
             func.coalesce(func.max(UserMetric.motivation), 0).label("motivation"),
+            func.coalesce(func.max(UserMetric.anxiety), 0).label("anxiety"),
+            func.coalesce(func.max(UserMetric.burnout), 0).label("burnout"),
+            func.coalesce(func.max(UserMetric.emotion), 0).label("emotion"),
             func.count(func.distinct(TherapySession.id)).label("sessions_count"),
             func.count(func.distinct(CourseProgress.id)).label("courses_count"),
             func.max(CheckIn.created_at).label("last_checkin_date")
@@ -36,7 +39,7 @@ def get_students_with_metrics(
     )
     
     res = []
-    for u, stress, motivation, s_count, c_count, last_check in query:
+    for u, stress, motivation, anxiety, burnout, emotion, s_count, c_count, last_check in query:
         res.append({
             "id": u.id,
             "username": u.username,
@@ -48,6 +51,9 @@ def get_students_with_metrics(
             "created_at": u.created_at,
             "stress": stress,
             "motivation": motivation,
+            "anxiety": anxiety,
+            "burnout": burnout,
+            "emotion": emotion,
             "sessions_count": s_count,
             "courses_count": c_count,
             "last_checkin_date": last_check,
