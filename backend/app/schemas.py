@@ -1,7 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from .models import UserRole, RiskLevel, CourseStatus, ModuleType, PracticeType
+
 
 
 class UserRegister(BaseModel):
@@ -320,3 +321,44 @@ class StudentMetrics(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ChatSessionCreate(BaseModel):
+    title: str = "Новый чат"
+
+
+class ChatSessionUpdate(BaseModel):
+    title: str
+
+
+class ChatSessionOut(BaseModel):
+    id: int
+    user_id: int
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ChatHistoryOut(BaseModel):
+    id: int
+    user_id: int
+    session_id: Optional[int] = None
+    role: str
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AIDeltaOutput(BaseModel):
+    reasoning: str = Field(description="Краткий семантический анализ сообщения.")
+    stress_delta: int = Field(description="Дельта стресса (-30 до 30)")
+    burnout_delta: int = Field(description="Дельта выгорания (-30 до 30)")
+    anxiety_delta: int = Field(description="Дельта тревожности (-30 до 30)")
+    motivation_delta: int = Field(description="Дельта мотивации (-30 до 30)")
+    emotion_delta: int = Field(description="Дельта эмоций (-30 до 30)")
+    heavy_intent: bool = Field(description="True, если пользователь говорит об ужасных вещах (селфхарм, паника, неспособность функционировать).")

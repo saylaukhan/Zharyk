@@ -76,6 +76,8 @@ input:focus, button:focus { outline: none; }
 .dark .text-green-700 { color: #4ade80 !important; }
 .dark .text-red-600 { color: #f87171 !important; }
 .dark .bg-zharyq-teal-light { background-color: var(--color-teal-light) !important; }
+.dark .bg-gray-50 { background-color: rgba(63, 63, 70, 0.4) !important; }
+.dark .hover\:bg-gray-50:hover { background-color: rgba(63, 63, 70, 0.6) !important; }
 .dark .hover\:bg-gray-100:hover { background-color: #3F3F46 !important; }
 .dark .hover\:text-zharyq-dark:hover { color: var(--color-text-primary) !important; }
 
@@ -137,13 +139,13 @@ input:focus, button:focus { outline: none; }
 .panel-enter { animation: panel-enter-anim 220ms ease-out both; }
 
 @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
-.auth-overlay { animation: overlay-in 200ms ease-out both; }
+.auth-overlay, .animate-overlay-in { animation: overlay-in 200ms ease-out both; }
 
 @keyframes modal-in {
     from { opacity: 0; transform: translateY(16px) scale(0.98); }
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.auth-modal { animation: modal-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.auth-modal, .animate-modal-in { animation: modal-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 
 .auth-input { outline: none; }
 
@@ -224,3 +226,5 @@ input:focus, button:focus { outline: none; }
     to   { opacity: 1; transform: translateY(0); }
 }
 .builder-ai-expand { animation: builder-ai-expand-in 160ms ease-out both; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
