@@ -48,3 +48,5 @@ Thumbs.db
 backend/uploads/videos/
 !backend/uploads/.gitkeep
 !backend/uploads/videos/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
