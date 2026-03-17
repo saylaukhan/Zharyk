@@ -115,6 +115,10 @@ export default function StudentApp() {
   const [deleteConfirmSession, setDeleteConfirmSession] = useState(null)
   const eventSourceRef = useRef(null)
 
+  // ── Voice recording state ──
+  const [isRecording, setIsRecording] = useState(false)
+  const recognitionRef = useRef(null)
+
   // ── Test state ──
   const [availableTests, setAvailableTests] = useState([])
   const [testHistory, setTestHistory] = useState([])
@@ -128,6 +132,62 @@ export default function StudentApp() {
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
   const accountMenuRef = useRef(null)
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+      }
+      setIsRecording(false)
+    } else {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+      if (!SpeechRecognition) {
+        alert('Ваш браузер не поддерживает голосовой ввод. Пожалуйста, используйте Google Chrome.')
+        return
+      }
+
+      const recognition = new SpeechRecognition()
+      recognition.lang = 'ru-RU'
+      recognition.continuous = true
+      recognition.interimResults = false
+
+      recognition.onresult = (event) => {
+        let transcriptChunk = ''
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            transcriptChunk += event.results[i][0].transcript
+          }
+        }
+        if (transcriptChunk) {
+          setInput(prev => {
+            const separator = prev && !prev.endsWith(' ') ? ' ' : ''
+            return prev + separator + transcriptChunk
+          })
+        }
+      }
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error', event.error)
+        setIsRecording(false)
+      }
+
+      recognition.onend = () => {
+        setIsRecording(false)
+      }
+
+      recognitionRef.current = recognition
+      recognition.start()
+      setIsRecording(true)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+      }
+    }
+  }, [])
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -847,7 +907,7 @@ export default function StudentApp() {
                     style={{ minHeight: '40px' }}
                   />
                   <div className="flex items-center gap-1 shrink-0 h-fit">
-                    <button className="p-2 text-zharyq-gray hover:text-zharyq-orange rounded-xl transition-colors flex items-center justify-center"><Mic size={20} /></button>
+                    <button type="button" onClick={toggleRecording} className={`p-2 rounded-xl transition-colors flex items-center justify-center ${isRecording ? 'text-white bg-red-500 hover:bg-red-600 animate-pulse' : 'text-zharyq-gray hover:text-zharyq-orange'}`} title={isRecording ? 'Остановить запись' : 'Голосовой ввод'}><Mic size={20} /></button>
                     {isStreaming ? (
                       <button onClick={stopGeneration} className="p-2 text-white bg-zharyq-teal hover:bg-zharyq-teal/90 rounded-xl transition-colors flex items-center justify-center" title="Остановить генерацию"><Square size={20} /></button>
                     ) : (
