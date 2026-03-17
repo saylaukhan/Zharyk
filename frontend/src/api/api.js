@@ -51,3 +51,8 @@ export const fetchUserTestResults = (userId) => request(`/tests/results/user/${u
 // ── Recommendations ───────────────────────────────────────────
 export const fetchRecommendations = (userId) => request(`/recommendations/${userId}`);
 
+// ── Alerts (extended) ─────────────────────────────────────────
+export const resolveAlert = (alertId) =>
+  request(`/alerts/${alertId}/resolve`, { method: 'PATCH' });
+export const getAlertMessages = (alertId) => request(`/alerts/${alertId}/messages`);
+

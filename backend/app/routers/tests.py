@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from ..database import get_db
-from ..models import Test, TestQuestion, TestResult, UserMetric, User, UserRole, Course, CourseStatus
+from ..models import Test, TestQuestion, TestResult, UserMetric, User, UserRole, Course, CourseStatus, Alert, RiskLevel
 from ..schemas import TestOut, TestDetailOut, TestSubmit, TestResultOut
 from ..auth import get_current_user, require_roles
 
@@ -169,15 +169,48 @@ def submit_test(
 
     # Update UserMetric with derived stress value
     stress_val = _hardiness_to_stress(total_score)
+    m_stress = stress_val
+    m_burnout = 0
+    m_anxiety = max(0, 100 - control_score * 3)
+    m_motivation = min(100, involvement_score * 2.5)
+    m_emotion = min(100, risk_score * 6)
+
     metric = UserMetric(
         user_id=current_user.id,
-        stress=stress_val,
-        burnout=0,
-        anxiety=max(0, 100 - control_score * 3),  # rough proxy
-        motivation=min(100, involvement_score * 2.5),
-        emotion=min(100, risk_score * 6),
+        stress=m_stress,
+        burnout=m_burnout,
+        anxiety=m_anxiety,
+        motivation=m_motivation,
+        emotion=m_emotion,
     )
     db.add(metric)
+
+    # Alert check: negative metrics >= 70 or positive metrics <= 20
+    _LEVEL_RANK = {"medium": 1, "high": 2, "critical": 3}
+    from ..routers.checkins import _check_metric_alert
+    risk, alert_type = _check_metric_alert(m_stress, m_burnout, m_anxiety, m_motivation, m_emotion)
+    if risk:
+        existing = (
+            db.query(Alert)
+            .filter(Alert.user_id == current_user.id, Alert.is_resolved == False)
+            .order_by(Alert.created_at.desc())
+            .first()
+        )
+        existing_rank = _LEVEL_RANK.get(existing.level.value, 0) if existing else 0
+        if existing_rank < _LEVEL_RANK.get(risk.value, 0):
+            db.add(Alert(
+                user_id=current_user.id,
+                alert_type=f"Тест: {alert_type}",
+                level=risk,
+                message=(
+                    f"Результат теста «{test.title}»: стресс={m_stress:.0f}, "
+                    f"тревожность={m_anxiety:.0f}, мотивация={m_motivation:.0f}, эмоции={m_emotion:.0f}"
+                ),
+                metrics_snapshot={
+                    "stress": m_stress, "burnout": m_burnout, "anxiety": m_anxiety,
+                    "motivation": m_motivation, "emotion": m_emotion,
+                },
+            ))
 
     db.commit()
     db.refresh(result)

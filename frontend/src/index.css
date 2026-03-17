@@ -228,3 +228,10 @@ input:focus, button:focus { outline: none; }
 .builder-ai-expand { animation: builder-ai-expand-in 160ms ease-out both; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── Text selection on orange-background elements ───────── */
+.selection-teal::selection,
+.selection-teal *::selection {
+    background-color: #14B8A6;
+    color: #ffffff;
+}

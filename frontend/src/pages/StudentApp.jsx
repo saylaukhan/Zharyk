@@ -56,6 +56,43 @@ function getChartColors(isDark) {
   }
 }
 
+function getDynamicGreeting(metrics, testHistory) {
+  const hour = new Date().getHours()
+  const day = new Date().getDay() // 0=вс, 1=пн, ..., 5=пт, 6=сб
+
+  let timeGreeting
+  if (hour >= 5 && hour < 12) timeGreeting = 'Доброе утро'
+  else if (hour >= 12 && hour < 18) timeGreeting = 'Добрый день'
+  else if (hour >= 18 && hour < 22) timeGreeting = 'Добрый вечер'
+  else timeGreeting = 'Доброй ночи'
+
+  const latest = metrics[metrics.length - 1]
+  const latestTest = testHistory[0]
+
+  let subtitle
+  if (latest?.stress > 70) {
+    subtitle = 'Кажется, последнее время было напряжённым — как вы сейчас?'
+  } else if (latest?.motivation < 30) {
+    subtitle = 'Мотивация немного упала. Поговорим о том, что происходит?'
+  } else if (latestTest?.overall_level === 'low') {
+    subtitle = 'Последний тест показал, что вам может быть непросто. Расскажите, как дела?'
+  } else if (day === 1 && hour < 14) {
+    subtitle = 'Новая неделя — как настрой?'
+  } else if (day === 5 && hour >= 14) {
+    subtitle = 'Пятница! Как прошла неделя?'
+  } else if (day === 0 || day === 6) {
+    subtitle = 'Хороших выходных! Как отдыхаете?'
+  } else if (hour >= 18) {
+    subtitle = 'Как прошёл день?'
+  } else if (hour < 9) {
+    subtitle = 'Как начинается ваше утро?'
+  } else {
+    subtitle = 'Как вы себя чувствуете сегодня?'
+  }
+
+  return { timeGreeting, subtitle }
+}
+
 export default function StudentApp() {
   const navigate = useNavigate()
   const { isDark } = useTheme()
@@ -234,6 +271,10 @@ export default function StudentApp() {
             try { return { role: 'recommendation_card', course: JSON.parse(h.content) } }
             catch { return null }
           }
+          if (h.role === 'test_recommendation_card') {
+            try { return { role: 'test_recommendation_card', test: JSON.parse(h.content) } }
+            catch { return null }
+          }
           return { role: h.role === 'assistant' ? 'ai' : 'user', text: h.content }
         }).filter(Boolean))
         setView('chat')
@@ -352,6 +393,9 @@ export default function StudentApp() {
         } else if (payload.type === 'recommendation_card') {
           // Inline course card in chat
           setMessages(prev => [...prev, { role: 'recommendation_card', course: payload.course }])
+        } else if (payload.type === 'test_recommendation_card') {
+          // Inline test card in chat
+          setMessages(prev => [...prev, { role: 'test_recommendation_card', test: payload.test }])
         } else if (payload.type === 'error') {
           setMessages(prev => prev.map((m, i) =>
             i === prev.length - 1 && m.role === 'ai' ? { ...m, text: payload.content, streaming: false } : m
@@ -507,7 +551,7 @@ export default function StudentApp() {
 
   const radarOptions = {
     responsive: true, maintainAspectRatio: true,
-    plugins: { legend: { display: false } },
+    plugins: { legend: { display: false }, tooltip: { filter: (_, index) => index === 0 } },
     scales: {
       r: {
         min: 0, max: 100,
@@ -630,8 +674,10 @@ export default function StudentApp() {
                     <div className="w-12 h-12 rounded-2xl bg-zharyq-orange flex items-center justify-center mx-auto mb-5">
                       <Sparkles size={22} className="text-white" />
                     </div>
-                    <h2 className="text-2xl font-semibold mb-2">Доброе утро, {authUser?.username || 'Студент'}</h2>
-                    <p className={`mb-8 text-sm ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>Как ваш настрой перед контрольной?</p>
+                    {(() => { const g = getDynamicGreeting(metrics, testHistory); return <>
+                    <h2 className="text-2xl font-semibold mb-2">{g.timeGreeting}, {authUser?.username || 'Студент'}</h2>
+                    <p className={`mb-8 text-sm ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{g.subtitle}</p>
+                    </> })()}
                     <div className="flex flex-wrap justify-center gap-2">
                       <button onClick={() => sendMessage('Хочу пройти тест на уровень стресса')} className={`border text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 hover:border-zharyq-orange ${isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-white border-zharyq-border text-zharyq-dark'}`}>
                         <FileText size={16} className="text-zharyq-gray" />Оценить стресс
@@ -648,6 +694,49 @@ export default function StudentApp() {
               )}
 
               {messages.map((msg, i) => {
+                // ── Test recommendation card row ─────────────────────────────
+                if (msg.role === 'test_recommendation_card') {
+                  return (
+                    <div key={i} className="px-4 md:px-8 py-4 animate-fade-in-up">
+                      <div className="max-w-3xl mx-auto flex gap-4">
+                        <div className="w-9 shrink-0" />
+                        <div
+                          onClick={() => setView('tests')}
+                          className={`flex-1 rounded-xl border cursor-pointer group hover:border-zharyq-teal transition-colors duration-150 overflow-hidden ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-white border-[#E5E7EB]'}`}
+                        >
+                          <div className="p-4">
+                            <div className="flex items-center mb-3">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-zharyq-teal bg-zharyq-teal/10">
+                                <ClipboardList size={8} />ИИ рекомендует тест
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDark ? 'bg-teal-900/40' : 'bg-teal-50'}`}>
+                                <ClipboardList size={20} className="text-zharyq-teal" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] font-medium text-zharyq-teal mb-0.5">Психологический тест</p>
+                                <h4 className={`text-sm font-semibold leading-snug group-hover:text-zharyq-teal transition-colors line-clamp-2 ${isDark ? 'text-zinc-100' : 'text-zharyq-dark'}`}>{msg.test.title}</h4>
+                              </div>
+                            </div>
+                            {msg.test.description && (
+                              <p className={`text-xs mt-2 line-clamp-2 ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{msg.test.description}</p>
+                            )}
+                          </div>
+                          <div className={`px-4 pb-3 pt-2.5 border-t flex items-center justify-between ${isDark ? 'border-[#3F3F46]' : 'border-[#E5E7EB]'}`}>
+                            <span className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>
+                              {msg.test.duration_minutes} мин · {msg.test.questions_count} вопросов
+                            </span>
+                            <div className="flex items-center gap-1 text-xs font-semibold text-zharyq-teal group-hover:translate-x-0.5 transition-transform">
+                              Пройти тест <ChevronRight size={13} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
+
                 // ── Recommendation card row ──────────────────────────────────
                 if (msg.role === 'recommendation_card') {
                   const meta = CATEGORY_META[msg.course.category] || { icon: BookOpen, bg: 'bg-orange-50', iconColor: 'text-zharyq-orange', tagColor: 'text-zharyq-orange' }
@@ -693,7 +782,7 @@ export default function StudentApp() {
                   return (
                     <div key={i} className="px-4 md:px-8 py-2 animate-fade-in-up">
                       <div className="max-w-3xl mx-auto flex justify-end">
-                        <div className="rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed max-w-[75%] text-white" style={{ background: 'var(--color-accent)' }}>
+                        <div className="selection-teal rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed max-w-[75%] text-white" style={{ background: 'var(--color-accent)' }}>
                           {msg.text}
                         </div>
                       </div>
@@ -1153,15 +1242,7 @@ export default function StudentApp() {
         {/* Dynamic status banner based on latest test */}
         {(() => {
           const latest = testHistory[0]
-          if (!latest) return (
-            <div className="bg-zharyq-teal-light border border-teal-200 rounded-xl p-4 mb-6 flex items-start gap-3">
-              <span className="flex w-3 h-3 rounded-full bg-zharyq-teal mt-0.5 shrink-0" />
-              <div>
-                <h3 className="text-sm font-semibold text-zharyq-teal mb-1">Добро пожаловать!</h3>
-                <p className="text-xs text-teal-700/80 leading-relaxed">Пройдите тест, чтобы увидеть ваш психологический профиль и получить рекомендации.</p>
-              </div>
-            </div>
-          )
+          if (!latest) return null
           if (latest.overall_level === 'high') return (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6 flex items-start gap-3">
               <span className="flex w-3 h-3 rounded-full bg-green-500 mt-0.5 shrink-0" />
