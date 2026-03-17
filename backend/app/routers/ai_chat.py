@@ -20,16 +20,18 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..database import get_db, DATABASE_URL
-from ..models import ChatHistory, UserMetric, Alert, RiskLevel, User, ChatSession
+from ..models import ChatHistory, UserMetric, Alert, RiskLevel, User, ChatSession, UserRole, TestResult
 from ..schemas import ChatHistoryOut, AIDeltaOutput, ChatSessionCreate, ChatSessionUpdate, ChatSessionOut
+from ..services.rag import rag_index
+from ..services.websocket_manager import manager as ws_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 OLLAMA_BASE = "http://localhost:11434"
-AGENT1_MODEL = "qwen2.5:14b"
-AGENT2_MODEL = "qwen2.5:14b"
+AGENT1_MODEL = "qwen2.5:14b"  # Empathetic psychologist (larger model for better conversational ability)
+AGENT2_MODEL = "qwen2.5:3b"   # State analyzer (smaller model for JSON delta analysis)
 
 # --- ПРОМПТЫ ---
 
@@ -44,31 +46,175 @@ STRICT LANGUAGE RULES:
 Ты — эмпатичный AI-психолог платформы Zharyq.
 Отвечай на языке пользователя. Никогда не ставь диагнозы.
 Дай тёплую реакцию (2–4 предложения). Если всё плохо — предложи технику заземления.
-Не используй markdown, только чистый текст.
+Обращайся к себе в мужском поле.
+
+MARKDOWN FORMATTING:
+- Use markdown to enhance readability and visual hierarchy.
+- Use **bold** for key emotional statements or important concepts.
+- Use *italics* for emphasis or subtle suggestions.
+- Use lists (- item) to structure advice, steps, or options.
+- Use > blockquote for grounding techniques, affirmations, or highlighted advice.
+- Keep formatting minimal but meaningful — serve the user's emotional needs, not the design.
 """
 
 AGENT2_SYSTEM = """
-Ты — семантический анализатор. Твоя задача — оценить последнее сообщение пользователя и выдать изменения показателей (дельты от -30 до +30).
+Ты — точный семантический анализатор психологического состояния. Анализируй сообщение пользователя и возвращай ТОЛЬКО JSON.
 
 STRICT LANGUAGE RULES:
-- Keep the reasoning field strictly in Russian or Kazakh. 
+- Keep the reasoning field strictly in Russian or Kazakh.
 - Zero tolerance for translations or CJK characters.
 
-ПРАВИЛА:
-1. ПРЯМОЕ СООТВЕТСТВИЕ: Если пользователь говорит "я выгорел" или "устал" — дельта выгорания +25/+30. Если говорит "появились силы" — дельта выгорания -25/-30.
-2. HEAVY INTENT: Поставь heavy_intent: true ТОЛЬКО если текст содержит признаки панической атаки, глубокой апатии ("не могу встать") или селфхарма.
+═══════════════════════════════════════════════
+ГЛАВНОЕ ПРАВИЛО ЗНАКОВ (ВЫУЧИ НАИЗУСТЬ):
+═══════════════════════════════════════════════
 
-Выдай ТОЛЬКО JSON в следующем формате:
+  stress, burnout, anxiety — это НЕГАТИВНЫЕ метрики (чем выше число, тем хуже).
+  motivation, emotion     — это ПОЗИТИВНЫЕ метрики (чем выше число, тем лучше).
+
+  Когда пользователю ПЛОХО (усталость, стресс, тревога, переработки, апатия):
+    stress_delta   = ПОЛОЖИТЕЛЬНОЕ число  (+5 .. +25)   ← стресс РАСТЁТ
+    burnout_delta  = ПОЛОЖИТЕЛЬНОЕ число  (+5 .. +25)   ← выгорание РАСТЁТ
+    anxiety_delta  = ПОЛОЖИТЕЛЬНОЕ число  (+5 .. +25)   ← тревога РАСТЁТ
+    motivation_delta = ОТРИЦАТЕЛЬНОЕ число (-5 .. -20)  ← мотивация ПАДАЕТ
+    emotion_delta    = ОТРИЦАТЕЛЬНОЕ число (-5 .. -20)  ← эмоции ПАДАЮТ
+
+  Когда пользователю ХОРОШО (восстановился, рад, всё получилось, отдохнул):
+    stress_delta   = ОТРИЦАТЕЛЬНОЕ число  (-5 .. -20)   ← стресс СНИЖАЕТСЯ
+    burnout_delta  = ОТРИЦАТЕЛЬНОЕ число  (-5 .. -20)   ← выгорание СНИЖАЕТСЯ
+    anxiety_delta  = ОТРИЦАТЕЛЬНОЕ число  (-5 .. -20)   ← тревога СНИЖАЕТСЯ
+    motivation_delta = ПОЛОЖИТЕЛЬНОЕ число (+5 .. +20)  ← мотивация РАСТЁТ
+    emotion_delta    = ПОЛОЖИТЕЛЬНОЕ число (+5 .. +20)  ← эмоции УЛУЧШАЮТСЯ
+
+  Нейтральное сообщение (факты без эмоций, "сдал экзамен", "прочитал книгу"):
+    все дельты = 0
+
+═══════════════════════════════════════════════
+ПРИМЕРЫ (ЭТАЛОН):
+═══════════════════════════════════════════════
+
+"я перерабатываю, постоянно устаю, нет сил"
+→ stress_delta: +18, burnout_delta: +20, anxiety_delta: +8, motivation_delta: -15, emotion_delta: -12
+
+"устал от учёбы, всё навалилось, тревожусь"
+→ stress_delta: +15, burnout_delta: +10, anxiety_delta: +18, motivation_delta: -12, emotion_delta: -15
+
+"чувствую себя опустошённым, ничего не хочется делать"
+→ stress_delta: +10, burnout_delta: +20, anxiety_delta: +8, motivation_delta: -18, emotion_delta: -20
+
+"не могу сосредоточиться, голова не варит, измотан"
+→ stress_delta: +14, burnout_delta: +16, anxiety_delta: +10, motivation_delta: -14, emotion_delta: -12
+
+"стало лучше, отдохнул, появились силы и желание работать"
+→ stress_delta: -12, burnout_delta: -10, anxiety_delta: -8, motivation_delta: +15, emotion_delta: +15
+
+"настроение хорошее, справился с задачей, горжусь собой"
+→ stress_delta: -8, burnout_delta: -5, anxiety_delta: -10, motivation_delta: +12, emotion_delta: +18
+
+"сегодня сдал экзамен"  ← нейтральный факт, без эмоций
+→ stress_delta: 0, burnout_delta: 0, anxiety_delta: 0, motivation_delta: 0, emotion_delta: 0
+
+═══════════════════════════════════════════════
+ИНТЕНСИВНОСТЬ ДЕЛЬТ:
+═══════════════════════════════════════════════
+  Лёгкое упоминание / мимоходом     → ±5..8
+  Явное описание проблемы            → ±10..15
+  Сильные эмоции / детальное описание → ±16..25
+
+═══════════════════════════════════════════════
+HEAVY INTENT:
+═══════════════════════════════════════════════
+  Поставь heavy_intent: true ТОЛЬКО если текст содержит:
+  • признаки панической атаки
+  • глубокую апатию ("не могу встать", "не вижу смысла")
+  • мысли о селфхарме или суициде
+
+═══════════════════════════════════════════════
+RECOMMEND COURSE:
+═══════════════════════════════════════════════
+  Поставь recommend_course: true ТОЛЬКО если:
+  • Пользователь ЯВНО просит совет ("посоветуй", "рекомендуй", "подскажи", "нужна помощь")
+  • ИЛИ heavy_intent: true
+  • ИЛИ КРИТИЧЕСКОЕ состояние: stress/burnout/anxiety_delta >= 70 по итогу ИЛИ motivation/emotion_delta < 20 по итогу
+
+  НЕ рекомендуй курс, если пользователь просто рассказывает без запроса помощи.
+
+═══════════════════════════════════════════════
+Выдай ТОЛЬКО JSON (без пояснений вне JSON):
 {
-  "reasoning": "краткое объяснение",
+  "reasoning": "краткое объяснение на русском",
   "stress_delta": 0,
   "burnout_delta": 0,
   "anxiety_delta": 0,
   "motivation_delta": 0,
   "emotion_delta": 0,
-  "heavy_intent": false
+  "heavy_intent": false,
+  "recommend_course": false
 }
 """
+
+# --- ОБНАРУЖЕНИЕ ЗАПРОСА КУРСА И ПОМОЩИ ---
+
+_COURSE_KEYWORDS = (
+    "курс", "посоветуй", "рекомендуй", "порекомендуй", "подбери", "подскажи",
+    "что посмотреть", "что почитать", "что послушать", "помоги найти",
+    "найди курс", "какой курс", "есть ли курс",
+    # Kazakh
+    "курс ұсын", "кеңес бер", "не ұсынасың",
+)
+
+_HELP_INTENT_KEYWORDS = (
+    "помощь", "помоги", "помогите", "помогу", "нужна помощь", "нужна поддержка",
+    "посоветуй", "посовет", "рекомендуй", "как справиться", "как мне быть",
+    "что делать", "подскажи", "подсказывай", "скажи",
+    # Kazakh
+    "көмек", "көмектесіңіз", "кеңес бер",
+)
+
+_TEST_INTENT_KEYWORDS = (
+    "хочу протестироваться", "хочу пройти тест", "пройти тест", "протестируй меня",
+    "мои метрики не точны", "метрики неточны", "не уверен в метриках", "не уверена в метриках",
+    "метрики неточные", "метрики могут быть неточными", "хочу проверить метрики",
+    "хочу протестировать", "хочу тест", "можно пройти тест", "хочу пройти тестирование",
+    "пройди тест", "протестироваться", "пройдем тест", "давай пройдем тест",
+    "прошу тест", "дай тест", "хочу тестирование", "покажи тест",
+    # Kazakh
+    "тест тапсырғым", "тест өткізу", "тексергім келеді", "тест бергіңіз",
+)
+
+
+def _is_course_request(message: str) -> bool:
+    """Returns True if the user is explicitly asking for a course recommendation."""
+    msg = message.lower()
+    return any(kw in msg for kw in _COURSE_KEYWORDS)
+
+
+def _has_help_intent(message: str) -> bool:
+    """Returns True if the user is explicitly seeking help or advice."""
+    msg = message.lower()
+    return any(kw in msg for kw in _HELP_INTENT_KEYWORDS)
+
+
+_TEST_TRIGGER_VERBS = (
+    "порекомендуй", "рекомендуй", "посоветуй", "подскажи",
+    "хочу", "дай", "покажи", "предложи", "найди",
+)
+
+
+def _has_test_intent(message: str) -> bool:
+    """Returns True if the user explicitly wants to take a psychological test.
+
+    Two-layer check:
+    1. Exact phrase match from _TEST_INTENT_KEYWORDS
+    2. Composite: any recommend-verb + the word "тест"
+    """
+    msg = message.lower()
+    if any(kw in msg for kw in _TEST_INTENT_KEYWORDS):
+        return True
+    # Composite: verb of recommendation/desire + "тест"
+    has_test_word = "тест" in msg
+    has_verb = any(v in msg for v in _TEST_TRIGGER_VERBS)
+    return has_test_word and has_verb
+
 
 # --- УТИЛИТЫ ---
 
@@ -132,7 +278,7 @@ async def _call_ollama_stream(model: str, messages: list) -> AsyncGenerator[str,
         "messages": messages,
         "stream": True,
         "options": {
-            "temperature": 0.4, 
+            "temperature": 0.4,
             "top_p": 0.9,
             "num_predict": 512,
             "stop": ["Translation:", "Перевод:", "中文"]
@@ -141,16 +287,33 @@ async def _call_ollama_stream(model: str, messages: list) -> AsyncGenerator[str,
     async with httpx.AsyncClient(timeout=120.0) as client:
         try:
             async with client.stream("POST", f"{OLLAMA_BASE}/api/chat", json=payload) as resp:
-                resp.raise_for_status()
+                if resp.status_code != 200:
+                    error_msg = f"Ollama API error ({resp.status_code})"
+                    logger.error(error_msg)
+                    raise Exception(error_msg)
+
                 async for line in resp.aiter_lines():
-                    if not line.strip(): continue
-                    chunk = json.loads(line)
-                    token = chunk.get("message", {}).get("content", "")
-                    if token: yield token
-                    if chunk.get("done"): break
+                    if not line.strip():
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                        token = chunk.get("message", {}).get("content", "")
+                        if token:
+                            yield token
+                        if chunk.get("done"):
+                            break
+                    except json.JSONDecodeError as je:
+                        logger.warning(f"Failed to parse Ollama chunk: {line}")
+                        continue
+        except httpx.TimeoutException as e:
+            logger.error(f"Ollama timeout: {e}")
+            raise Exception("Ollama service timeout. Please try again.")
+        except httpx.ConnectError as e:
+            logger.error(f"Cannot connect to Ollama: {e}")
+            raise Exception("Cannot connect to Ollama service. Is it running on localhost:11434?")
         except Exception as e:
-            logger.error(f"Ollama stream error: {e}")
-            yield f"Error: {str(e)}"
+            logger.error(f"Ollama stream error: {type(e).__name__}: {e}")
+            raise
 
 async def _call_ollama_sync(model: str, messages: list) -> str:
     """Синхронный (блокирующий ожидание) вызов Ollama."""
@@ -159,26 +322,97 @@ async def _call_ollama_sync(model: str, messages: list) -> str:
         "messages": messages,
         "stream": False,
         "options": {
-            "temperature": 0.2, # Agent 2 needs even lower temperature for JSON
+            "temperature": 0.2,  # Agent 2 needs even lower temperature for JSON
             "top_p": 0.9,
             "num_predict": 512,
         },
     }
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(f"{OLLAMA_BASE}/api/chat", json=payload)
-        resp.raise_for_status()
-        return resp.json().get("message", {}).get("content", "")
+        try:
+            resp = await client.post(f"{OLLAMA_BASE}/api/chat", json=payload)
+            if resp.status_code != 200:
+                error_text = resp.text[:200]
+                error_msg = f"Ollama API error ({resp.status_code}): {error_text}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+            return resp.json().get("message", {}).get("content", "")
+        except httpx.TimeoutException as e:
+            logger.error(f"Ollama timeout during sync call: {e}")
+            raise Exception("Ollama service timeout")
+        except httpx.ConnectError as e:
+            logger.error(f"Cannot connect to Ollama: {e}")
+            raise Exception("Cannot connect to Ollama service")
+        except Exception as e:
+            logger.error(f"Ollama sync error: {type(e).__name__}: {e}")
+            raise
 
 # --- ЛОГИКА АГЕНТОВ ---
 
-async def _analyze_and_update(user_id: int, user_message: str):
+def _check_alert_level(new_values: dict, deltas: dict, heavy_intent: bool, last_test_result=None) -> str | None:
+    """Determine alert severity based on metrics and context.
+
+    Threshold-only alerts (no worsening) are handled by the background metric scanner.
+    Here we only fire when the user is actively getting worse or has heavy intent.
+    """
+    s = new_values["stress"]
+    b = new_values["burnout"]
+    a = new_values["anxiety"]
+    m = new_values["motivation"]
+    e = new_values["emotion"]
+
+    # CRITICAL: heavy_intent AND any negative metric > 80
+    if heavy_intent and any(v > 80 for v in [s, b, a]):
+        return "critical"
+
+    # Determine if the current message is actually making things worse
+    is_worsening = (
+        deltas.get("stress_delta", 0) > 0
+        or deltas.get("burnout_delta", 0) > 0
+        or deltas.get("anxiety_delta", 0) > 0
+        or deltas.get("motivation_delta", 0) < 0
+        or deltas.get("emotion_delta", 0) < 0
+    )
+
+    # HIGH: any negative metric > 75 AND delta jumped > 20 in this session
+    metric_delta_pairs = [
+        (s, deltas.get("stress_delta", 0)),
+        (b, deltas.get("burnout_delta", 0)),
+        (a, deltas.get("anxiety_delta", 0)),
+    ]
+    if any(v > 75 and d > 20 for v, d in metric_delta_pairs):
+        return "high"
+
+    # ANOMALY: recent test showed normal but chat analysis shows high risk → promote to high
+    if last_test_result and last_test_result.overall_level == "low":
+        if any(v > 75 for v in [s, b, a]):
+            return "high"
+
+    # The rules below only apply when the user is actively getting worse.
+    # If metrics are improving, the background scanner handles threshold alerts.
+    if not is_worsening:
+        return None
+
+    # MEDIUM: 3+ metrics in danger zone (negatives > 60, positives inverted > 60)
+    bad_count = sum(1 for v in [s, b, a] if v > 60)
+    bad_count += sum(1 for v in [m, e] if (100 - v) > 60)
+    if bad_count >= 3:
+        return "medium"
+
+    # THRESHOLD RULE: any single negative metric >= 70 OR positive metric <= 20
+    if any(v >= 70 for v in [s, b, a]) or any(v <= 20 for v in [m, e]):
+        return "medium"
+
+    return None
+
+
+async def _analyze_and_update(user_id: int, user_message: str, session_id: int = None, force_recommendation: bool = False):
     """
     Agent 2: Анализ дельты состояния и обновление БД.
     Запускается последовательно ПОСЛЕ стриминга Agent 1.
     """
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    
+
     # Создаем временную сессию для фонового процесса
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
     SessionLocal = sessionmaker(bind=engine)
@@ -198,8 +432,18 @@ async def _analyze_and_update(user_id: int, user_message: str):
         # 2. Формируем упрощенный запрос для Agent 2
         dynamic_system_prompt = AGENT2_SYSTEM
 
+        # Контекст для Agent 2: есть ли явный запрос помощи/рекомендации
+        has_explicit_help = _has_help_intent(user_message) or _is_course_request(user_message)
+        help_status = "ЯВНО просит помощь/совет" if has_explicit_help else "НЕ просит явно помощь"
+        help_context = (
+            f"[КОНТЕКСТ: Пользователь {help_status}. "
+            f"Рекомендуй курс: только при явном запросе, heavy_intent, "
+            f"критических метриках (stress/burnout/anxiety >= 70) ИЛИ низких позитивных (emotion/motivation < 20)]"
+        )
+
         messages = [
             {"role": "system", "content": dynamic_system_prompt},
+            {"role": "system", "content": help_context},
             {"role": "user", "content": f"Оцени сообщение: '{user_message}'"},
         ]
 
@@ -226,12 +470,13 @@ async def _analyze_and_update(user_id: int, user_message: str):
             "emotion": _clamp(current["emotion"] + data.get("emotion_delta", 0)),
         }
 
-        # 3.2 Проверка порогов для Critical Type
+        # 3.2 Проверка порогов и создание алерта
         heavy_intent = data.get("heavy_intent", False)
-        critical_type = "none"
+        reasoning_text = clean_hallucinations(data.get("reasoning", ""))
 
+        # Legacy: keep critical_type for SSE event
+        critical_type = "none"
         if heavy_intent:
-            # Проверяем шкалы, порог 70+. Если несколько, берем ту, что выше.
             potentials = {
                 "anxiety": new_values["anxiety"],
                 "burnout": new_values["burnout"],
@@ -241,24 +486,134 @@ async def _analyze_and_update(user_id: int, user_message: str):
             if active:
                 critical_type = max(active, key=active.get)
 
-        # Сохранение в БД
+        # Check most recent test result for anomaly detection (< 7 days)
+        from datetime import datetime, timedelta, timezone
+        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        last_test = (
+            db.query(TestResult)
+            .filter(TestResult.user_id == user_id, TestResult.created_at >= week_ago)
+            .order_by(TestResult.created_at.desc())
+            .first()
+        )
+
+        alert_level = _check_alert_level(new_values, data, heavy_intent, last_test)
+
+        # Сохранение метрики в БД
         new_metric = UserMetric(user_id=user_id, **new_values)
         db.add(new_metric)
 
-        if critical_type != "none":
-            alert = Alert(
-                user_id=user_id,
-                alert_type=f"AI Critical State ({critical_type})",
-                level=RiskLevel.critical,
-                message=clean_hallucinations(data.get("reasoning", "Обнаружено тяжелое психологическое состояние"))
+        # Deduplication: skip if there's already an unresolved alert of same/higher level
+        _level_rank = {"medium": 1, "high": 2, "critical": 3}
+        if alert_level:
+            existing_alert = (
+                db.query(Alert)
+                .filter(Alert.user_id == user_id, Alert.is_resolved == False)
+                .order_by(Alert.created_at.desc())
+                .first()
             )
-            db.add(alert)
+            if existing_alert and _level_rank.get(existing_alert.level.value, 0) >= _level_rank.get(alert_level, 0):
+                alert_level = None
+
+        created_alert = None
+        if alert_level:
+            # Snapshot the recent chat messages so they survive chat deletion
+            messages_snap = []
+            if session_id:
+                recent_msgs = (
+                    db.query(ChatHistory)
+                    .filter(
+                        ChatHistory.session_id == session_id,
+                        ChatHistory.role.in_(["user", "assistant"]),
+                    )
+                    .order_by(ChatHistory.created_at.desc())
+                    .limit(5)
+                    .all()
+                )
+                messages_snap = [
+                    {"role": m.role, "content": m.content, "created_at": m.created_at.isoformat()}
+                    for m in reversed(recent_msgs)
+                ]
+            created_alert = Alert(
+                user_id=user_id,
+                session_id=session_id,
+                alert_type=f"AI Alert ({alert_level})",
+                level=RiskLevel(alert_level),
+                message=reasoning_text or "Обнаружено повышенное психологическое напряжение",
+                reasoning=reasoning_text,
+                metrics_snapshot=new_values,
+                messages_snapshot=messages_snap,
+            )
+            db.add(created_alert)
+            print(f"[ALERT] {alert_level} created for user_id={user_id}", flush=True)
 
         db.commit()
         db.refresh(new_metric)
 
-        # Возвращаем АБСОЛЮТНЫЕ значения для фронтенда
-        return {**new_values, "critical_type": critical_type}
+        # Broadcast via WebSocket to all psychologists
+        if created_alert and alert_level:
+            student = db.query(User).filter(User.id == user_id).first()
+            student_name = student.username if student else f"User #{user_id}"
+            psychologists = db.query(User).filter(User.role == UserRole.psychologist).all()
+            payload = {
+                "type": "new_alert",
+                "alert_id": created_alert.id,
+                "level": alert_level,
+                "student_name": student_name,
+                "student_id": user_id,
+                "reasoning": reasoning_text,
+                "metrics": new_values,
+                "session_id": session_id,
+                "created_at": created_alert.created_at.isoformat() if created_alert.created_at else None,
+            }
+            for psych in psychologists:
+                await ws_manager.broadcast_to_psychologist(psych.id, payload)
+
+        # --- RAG: семантический подбор курсов ТОЛЬКО ПО РЕШЕНИЮ Agent 2 ---
+        # Agent 2 решил, нужен ли курс (recommend_course), на основе:
+        # • явного запроса пользователя (force_recommendation)
+        # • critical state (stress/burnout/anxiety >= 70 или emotion/motivation < 20)
+        # • heavy_intent (паника, апатия, селфхарм)
+        recommend_course = data.get("recommend_course", False)
+        heavy_intent = data.get("heavy_intent", False)
+
+        # Backend validation: проверяем, что рекомендация соответствует правилам
+        if recommend_course and not (force_recommendation or heavy_intent):
+            # Если не явный запрос и не heavy_intent, проверяем пороги состояния
+            is_critical_negative = (
+                new_values["stress"] >= 70 or
+                new_values["burnout"] >= 70 or
+                new_values["anxiety"] >= 70
+            )
+            is_critical_positive_low = (
+                new_values["emotion"] < 20 or
+                new_values["motivation"] < 20
+            )
+            # Рекомендуем ТОЛЬКО если есть critical state
+            recommend_course = is_critical_negative or is_critical_positive_low
+
+        recs = []
+        recommendation_card = None
+
+        if recommend_course or force_recommendation:
+            # RAG ищет курс, семантически близкий к сообщению пользователя
+            recs = await rag_index.search(db, user_message, top_k=3)
+
+            if not recs:
+                # Fallback: если модель эмбеддингов недоступна — категорийный подбор
+                from ..services.recommendations import get_recommendations
+                recs = get_recommendations(db, new_values)
+
+            # Показываем карточку первого результата
+            if recs:
+                recommendation_card = recs[0]
+
+        # Возвращаем АБСОЛЮТНЫЕ значения + рекомендации для фронтенда
+        return {
+            **new_values,
+            "critical_type": critical_type,
+            "recommendations": recs,
+            "recommendation_card": recommendation_card,
+        }
 
     except Exception as e:
         logger.error(f"Background analysis failed: {e}")
@@ -297,20 +652,63 @@ async def chat_stream(
     for h in reversed(history):
         context.append({"role": h.role, "content": h.content})
 
+    # Проверяем оба намерения: тест имеет приоритет над курсом
+    is_test_request = _has_test_intent(message)
+    is_explicit_course_request = _is_course_request(message) and not is_test_request
+
+    # Если да — заранее находим лучший курс и «подсказываем» Agent 1,
+    # чтобы он упомянул его естественно в своём ответе.
+    if is_explicit_course_request:
+        rag_results = await rag_index.search(db, message, top_k=1)
+        if rag_results:
+            best = rag_results[0]
+            hint = (
+                f"[СИСТЕМА: Пользователь просит рекомендацию курса. "
+                f"В базе найден наиболее подходящий курс: «{best['title']}» "
+                f"(категория: {best['category']}). "
+                f"Упомяни его в своём ответе естественно и тепло — "
+                f"без маркдауна, без кавычек в виде символов.]"
+            )
+            context.append({"role": "system", "content": hint})
+
+    test_card_data = None
+
+    if is_test_request:
+        from ..models import Test
+        first_test = db.query(Test).filter(Test.is_active == True).first()
+        if first_test:
+            test_card_data = {
+                "id": first_test.id,
+                "slug": first_test.slug,
+                "title": first_test.title,
+                "description": first_test.description,
+                "duration_minutes": first_test.duration_minutes,
+                "questions_count": first_test.questions_count,
+            }
+            hint = (
+                f"[СИСТЕМА: Пользователь хочет пройти психологический тест, НЕ курс. "
+                f"В платформе доступен тест «{first_test.title}». "
+                f"Скажи пользователю, что ты подготовил карточку с тестом — он может перейти к нему. "
+                f"НЕ упоминай курсы. Ответь коротко и тепло.]"
+            )
+            context.append({"role": "system", "content": hint})
+
     async def event_generator():
         full_reply = []
-        
+
         # ШАГ 1: Работа Agent 1 (Streaming)
         try:
             async for token in _call_ollama_stream(AGENT1_MODEL, context):
                 # Простейшая фильтрация иероглифов на лету
                 if re.search(r'[\u4e00-\u9fff]', token):
                     continue
-                
+
                 full_reply.append(token)
                 yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            error_msg = str(e)
+            logger.error(f"Agent 1 streaming failed: {error_msg}")
+            yield f"data: {json.dumps({'type': 'error', 'content': f'Ошибка при обработке запроса: {error_msg}'})}\n\n"
             yield "data: [DONE]\n\n"
             return
 
@@ -337,11 +735,41 @@ async def chat_stream(
 
         # ШАГ 2: Работа Agent 2 (Strictly Sequential)
         # Это запускается ТОЛЬКО когда цикл стриминга выше завершен
-        updated_metrics = await _analyze_and_update(user_id, message)
+        updated_metrics = await _analyze_and_update(user_id, message, session_id=session_id, force_recommendation=is_explicit_course_request)
         
         if updated_metrics:
             # Отправляем обновленные абсолютные значения для графика
             yield f"data: {json.dumps({'type': 'profile_updated', 'metrics': updated_metrics})}\n\n"
+
+            # Карточка-рекомендация в чат (только при значимом состоянии)
+            card = updated_metrics.get("recommendation_card")
+            if card:
+                yield f"data: {json.dumps({'type': 'recommendation_card', 'course': card})}\n\n"
+
+                # Сохраняем карточку в историю чата, чтобы она восстанавливалась при перезагрузке
+                from ..database import SessionLocal as SL2
+                with SL2() as card_db:
+                    card_db.add(ChatHistory(
+                        user_id=user_id,
+                        session_id=session_id,
+                        role="recommendation_card",
+                        content=json.dumps(card, ensure_ascii=False),
+                    ))
+                    card_db.commit()
+
+        # Карточка теста (только при явном запросе пользователя)
+        if test_card_data:
+            yield f"data: {json.dumps({'type': 'test_recommendation_card', 'test': test_card_data})}\n\n"
+
+            from ..database import SessionLocal as SL3
+            with SL3() as test_db:
+                test_db.add(ChatHistory(
+                    user_id=user_id,
+                    session_id=session_id,
+                    role="test_recommendation_card",
+                    content=json.dumps(test_card_data, ensure_ascii=False),
+                ))
+                test_db.commit()
 
         yield "data: [DONE]\n\n"
 

@@ -8,6 +8,7 @@ from typing import List
 
 from ..database import get_db
 from ..models import Course, CourseModule, TheoryModule, PracticeModule, CourseProgress, ModuleType, CourseStatus
+from ..services.rag import rag_index
 from ..schemas import (
     CourseCreate, CourseUpdate, CourseOut, CourseDetail,
     CourseModuleCreate, CourseModuleOut, CourseModuleUpdate,
@@ -120,6 +121,7 @@ def update_course(course_id: int, payload: CourseUpdate, db: Session = Depends(g
         setattr(course, key, value)
     db.commit()
     db.refresh(course)
+    rag_index.invalidate()
     return CourseDetail.model_validate(course)
 
 
@@ -131,6 +133,7 @@ def publish_course(course_id: int, db: Session = Depends(get_db)):
     course.status = CourseStatus.published
     db.commit()
     db.refresh(course)
+    rag_index.invalidate()
     return CourseDetail.model_validate(course)
 
 

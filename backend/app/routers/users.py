@@ -17,19 +17,14 @@ def get_students_with_metrics(
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.psychologist, UserRole.director))
 ):
-    query = (
+    # Get students with session/course counts and last checkin
+    students_query = (
         db.query(
             User,
-            func.coalesce(func.max(UserMetric.stress), 0).label("stress"),
-            func.coalesce(func.max(UserMetric.motivation), 0).label("motivation"),
-            func.coalesce(func.max(UserMetric.anxiety), 0).label("anxiety"),
-            func.coalesce(func.max(UserMetric.burnout), 0).label("burnout"),
-            func.coalesce(func.max(UserMetric.emotion), 0).label("emotion"),
             func.count(func.distinct(TherapySession.id)).label("sessions_count"),
             func.count(func.distinct(CourseProgress.id)).label("courses_count"),
             func.max(CheckIn.created_at).label("last_checkin_date")
         )
-        .outerjoin(UserMetric, User.id == UserMetric.user_id)
         .outerjoin(TherapySession, User.id == TherapySession.user_id)
         .outerjoin(CourseProgress, User.id == CourseProgress.user_id)
         .outerjoin(CheckIn, User.id == CheckIn.user_id)
@@ -37,9 +32,28 @@ def get_students_with_metrics(
         .group_by(User.id)
         .all()
     )
-    
+
+    if not students_query:
+        return []
+
+    # Fetch the latest metric per student (latest by id = most recent record)
+    student_ids = [u.id for u, _, _, _ in students_query]
+    latest_ids_sq = (
+        db.query(func.max(UserMetric.id).label("mid"))
+        .filter(UserMetric.user_id.in_(student_ids))
+        .group_by(UserMetric.user_id)
+        .subquery()
+    )
+    metrics_list = (
+        db.query(UserMetric)
+        .filter(UserMetric.id.in_(db.query(latest_ids_sq.c.mid)))
+        .all()
+    )
+    metrics_map = {m.user_id: m for m in metrics_list}
+
     res = []
-    for u, stress, motivation, anxiety, burnout, emotion, s_count, c_count, last_check in query:
+    for u, s_count, c_count, last_check in students_query:
+        m = metrics_map.get(u.id)
         res.append({
             "id": u.id,
             "username": u.username,
@@ -49,11 +63,11 @@ def get_students_with_metrics(
             "anonymous_id": u.anonymous_id,
             "is_active": u.is_active,
             "created_at": u.created_at,
-            "stress": stress,
-            "motivation": motivation,
-            "anxiety": anxiety,
-            "burnout": burnout,
-            "emotion": emotion,
+            "stress": m.stress if m else 0,
+            "motivation": m.motivation if m else 0,
+            "anxiety": m.anxiety if m else 0,
+            "burnout": m.burnout if m else 0,
+            "emotion": m.emotion if m else 0,
             "sessions_count": s_count,
             "courses_count": c_count,
             "last_checkin_date": last_check,

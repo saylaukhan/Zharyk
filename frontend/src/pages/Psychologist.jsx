@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Search, AlertTriangle, Activity, CheckCircle, X, Plus,
@@ -17,11 +17,15 @@ import 'react-big-calendar/lib/css/react-big-calendar.css'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
-import { 
+import {
   fetchAlertsRich, fetchStudentsWithMetrics, fetchSessions, fetchNotes, fetchUserTestResults, fetchTests,
   createSession, updateSession, deleteSession,
-  createNote, updateNote, deleteNote
+  createNote, updateNote, deleteNote,
+  resolveAlert
 } from '../api/api'
+import { useAlertWebSocket } from '../hooks/useAlertWebSocket'
+import AlertBanner from '../components/AlertBanner'
+import AlertDetailModal from '../components/AlertDetailModal'
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
 
@@ -139,6 +143,24 @@ export default function Psychologist() {
   const [preselectedStudentId, setPreselectedStudentId] = useState(null)
   const [psyTests, setPsyTests] = useState([])
   const [psyTestsLoading, setPsyTestsLoading] = useState(false)
+  const [selectedAlert, setSelectedAlert] = useState(null)
+  const [liveAlerts, setLiveAlerts] = useState([])
+  const [notifOpen, setNotifOpen] = useState(false)
+  const notifRef = useRef(null)
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setNotifOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const refreshStudents = () => {
+    fetchStudentsWithMetrics().then(setStudents).catch(() => {})
+  }
 
   // Notes modal state
   const [noteModalOpen, setNoteModalOpen] = useState(false)
@@ -183,6 +205,49 @@ export default function Psychologist() {
   useEffect(() => {
     if (view === 'sessions') reloadSessions()
   }, [view, reloadSessions])
+
+  // Poll student metrics every 60s when the users view is active
+  useEffect(() => {
+    if (view !== 'users') return
+    const interval = setInterval(refreshStudents, 60000)
+    return () => clearInterval(interval)
+  }, [view])
+
+  // Play a short beep using Web Audio API (for Critical alerts)
+  const playAlertSound = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+    } catch {
+      // AudioContext blocked or unavailable — silent fallback
+    }
+  };
+
+  // Real-time WebSocket alerts
+  useAlertWebSocket(authUser?.id, (alertData) => {
+    const id = alertData.alert_id ?? alertData.id;
+    setAlerts(prev => {
+      if (id && prev.some(a => (a.id ?? a.alert_id) === id)) return prev;
+      return [alertData, ...prev];
+    });
+    setLiveAlerts(prev => {
+      if (id && prev.some(a => (a.alert_id ?? a.id) === id)) return prev;
+      return [alertData, ...prev];
+    });
+    if (alertData.level === 'critical' || alertData.level === 'high') {
+      playAlertSound();
+    }
+    // Refresh student metrics since their state may have changed
+    refreshStudents();
+  });
 
   // Load tests dynamically when 'tests' view is opened
   useEffect(() => {
@@ -591,6 +656,86 @@ export default function Psychologist() {
             <p className="text-xs text-zharyq-gray mt-0.5">{titles[view]?.[1]}</p>
           </div>
           <div className="flex items-center gap-3">
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => setNotifOpen(prev => !prev)}
+                className={`relative transition-colors ${notifOpen ? 'text-zharyq-dark' : 'text-zharyq-gray hover:text-zharyq-dark'}`}
+              >
+                <Bell size={20} />
+                {alerts.filter(a => !a.is_resolved).length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" />
+                )}
+              </button>
+
+              {notifOpen && (() => {
+                const unresolvedAlerts = alerts.filter(a => !a.is_resolved)
+                return (
+                  <div className="absolute top-full right-0 mt-3 w-80 bg-white border border-zharyq-border rounded-2xl z-50 overflow-hidden">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-zharyq-border">
+                      <h3 className="text-sm font-semibold text-zharyq-dark">Уведомления</h3>
+                      <div className="flex items-center gap-2">
+                        {unresolvedAlerts.length > 0 && (
+                          <span className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full">
+                            {unresolvedAlerts.length}
+                          </span>
+                        )}
+                        <button onClick={() => setNotifOpen(false)} className="text-zharyq-gray hover:text-zharyq-dark transition-colors">
+                          <X size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Content */}
+                    {unresolvedAlerts.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                        <div className="w-12 h-12 rounded-2xl bg-zharyq-teal-light flex items-center justify-center mb-3">
+                          <CheckCircle size={22} className="text-zharyq-teal" />
+                        </div>
+                        <p className="text-sm font-medium text-zharyq-dark mb-1">Пока всё спокойно</p>
+                        <p className="text-xs text-zharyq-gray leading-relaxed">Новые алерты появятся здесь автоматически</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="max-h-72 overflow-y-auto divide-y divide-zharyq-border">
+                          {unresolvedAlerts.slice(0, 6).map((a) => {
+                            const meta = levelMeta(a.level)
+                            const uid = a.user_id ?? a.student_id
+                            const displayName = a.anonymous_id || a.student_name || (uid ? `Студент #${uid}` : 'Неизвестный')
+                            return (
+                              <div
+                                key={a.id ?? a.alert_id}
+                                onClick={() => { setSelectedAlert(a); setNotifOpen(false) }}
+                                className="px-4 py-3 hover:bg-zharyq-bg transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-start gap-3">
+                                  <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${meta.dot}`} />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                                      <p className="text-xs font-semibold text-zharyq-dark truncate">{displayName}</p>
+                                      <span className="text-[10px] text-zharyq-gray shrink-0">{timeAgo(a.created_at)}</span>
+                                    </div>
+                                    <p className="text-xs text-zharyq-gray truncate">{a.alert_type || `AI Alert (${a.level})`}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <div className="border-t border-zharyq-border">
+                          <button
+                            onClick={() => { setView('alerts'); setNotifOpen(false) }}
+                            className="w-full px-4 py-2.5 text-xs font-semibold text-zharyq-orange hover:bg-orange-50 transition-colors text-center"
+                          >
+                            Открыть все алерты →
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
             {view !== 'courses' && (
               <>
                 <div className="relative">
@@ -623,12 +768,30 @@ export default function Psychologist() {
             {view === 'alerts' && (
               <div className="flex-1 overflow-y-auto p-6 animate-fade-in-up">
                 <div className="max-w-4xl mx-auto">
+                  {/* Real-time live alert banner */}
+                  {liveAlerts.length > 0 && (
+                    <AlertBanner
+                      alerts={liveAlerts}
+                      isDark={isDark}
+                      onSelect={setSelectedAlert}
+                      onDismiss={async (alertId) => {
+                        try { await resolveAlert(alertId); } catch { /* already resolved or gone */ }
+                        setLiveAlerts(prev => prev.filter(a => (a.alert_id ?? a.id) !== alertId));
+                        setAlerts(prev => prev.filter(a => (a.id ?? a.alert_id) !== alertId));
+                      }}
+                    />
+                  )}
+                  {(() => {
+                    const unresolvedAlerts = alerts.filter(a => !a.is_resolved);
+                    const unresolvedStudentIds = new Set(unresolvedAlerts.map(a => a.user_id ?? a.student_id).filter(Boolean));
+                    const statsCards = [
+                      { icon: AlertTriangle, bg: 'bg-red-50', color: 'text-red-500', count: unresolvedAlerts.filter(a => a.level === 'critical').length, label: 'Критических' },
+                      { icon: Activity, bg: 'bg-amber-50', color: 'text-amber-500', count: unresolvedAlerts.filter(a => a.level === 'medium' || a.level === 'high').length, label: 'Средних' },
+                      { icon: CheckCircle, bg: 'bg-zharyq-teal-light', color: 'text-zharyq-teal', count: students.filter(s => !unresolvedStudentIds.has(s.id)).length, label: 'В норме' },
+                    ];
+                    return (
                   <div className="grid grid-cols-3 gap-4 mb-6">
-                    {[
-                      { icon: AlertTriangle, bg: 'bg-red-50', color: 'text-red-500', count: alerts.filter(a => a.level === 'critical').length, label: 'Критических' },
-                      { icon: Activity, bg: 'bg-amber-50', color: 'text-amber-500', count: alerts.filter(a => a.level === 'medium' || a.level === 'high').length, label: 'Средних' },
-                      { icon: CheckCircle, bg: 'bg-zharyq-teal-light', color: 'text-zharyq-teal', count: students.length - alerts.filter(a => !a.is_resolved).length, label: 'В норме' },
-                    ].map((s, i) => (
+                    {statsCards.map((s, i) => (
                       <div key={i} className="border border-zharyq-border rounded-2xl p-4 flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-xl ${s.bg} flex items-center justify-center shrink-0`}>
                           <s.icon size={20} className={s.color} />
@@ -640,6 +803,8 @@ export default function Psychologist() {
                       </div>
                     ))}
                   </div>
+                    );
+                  })()}
                   <div className="border border-zharyq-border rounded-2xl overflow-hidden text-zharyq-dark">
                     <div className="px-5 py-4 border-b border-zharyq-border flex items-center justify-between">
                       <h2 className="text-sm font-semibold">Активные алерты</h2>
@@ -657,24 +822,36 @@ export default function Psychologist() {
                         <tbody>
                           {alerts.filter(a => !a.is_resolved).map((a, i) => {
                             const meta = levelMeta(a.level);
+                            // Support both REST alerts (user_id/anonymous_id) and WS alerts (student_id/student_name)
+                            const uid = a.user_id ?? a.student_id;
+                            const displayName = a.anonymous_id || a.student_name || (uid ? `Студент #${uid}` : 'Неизвестный');
+                            const alertTypeLabel = a.alert_type || `AI Alert (${a.level})`;
+                            // Look up class from loaded students list if not directly on the alert
+                            const studentRecord = students.find(s => s.id === uid);
+                            const className = a.class_name || studentRecord?.class_name || '-';
                             return (
-                              <tr key={i} className="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
+                              <tr key={a.id ?? a.alert_id ?? i} className="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
                                 <td className="px-5 py-3.5">
                                   <div className="flex items-center gap-2.5">
-                                    <div className={`w-7 h-7 rounded-full ${meta.bg} flex items-center justify-center text-xs font-bold ${meta.color}`}>U{a.user_id}</div>
-                                    <span className="text-sm font-medium">{a.anonymous_id || `Студент #${a.user_id}`}</span>
+                                    <div className={`w-7 h-7 rounded-full ${meta.bg} flex items-center justify-center text-xs font-bold ${meta.color}`}>
+                                      {displayName[0]?.toUpperCase() || 'U'}
+                                    </div>
+                                    <span className="text-sm font-medium">{displayName}</span>
                                   </div>
                                 </td>
-                                <td className="px-5 py-3.5 text-zharyq-gray text-xs">{a.class_name || '-'}</td>
-                                <td className="px-5 py-3.5 text-xs font-medium">{a.alert_type}</td>
+                                <td className="px-5 py-3.5 text-zharyq-gray text-xs">{className}</td>
+                                <td className="px-5 py-3.5 text-xs font-medium">{alertTypeLabel}</td>
                                 <td className="px-5 py-3.5">
                                   <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${meta.class} border px-2 py-0.5 rounded-full`}>
                                     <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}
                                   </span>
                                 </td>
-                                <td className="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap">{timeAgo(a.created_at)}</td>
-                                <td className="px-5 py-3.5">
-                                  <button onClick={() => openProfile(a.user_id)} className="text-xs font-medium text-zharyq-orange hover:underline">Профиль</button>
+                                <td className="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap" title={timeAgo(a.created_at)}>
+                                  {a.created_at ? new Date(a.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                                </td>
+                                <td className="px-5 py-3.5 flex items-center gap-3">
+                                  <button onClick={() => setSelectedAlert(a)} className="text-xs font-medium text-zharyq-orange hover:underline">Алерт</button>
+                                  {uid && <button onClick={() => openProfile(uid)} className="text-xs font-medium text-zharyq-gray hover:underline">Профиль</button>}
                                 </td>
                               </tr>
                             )
@@ -1514,6 +1691,19 @@ export default function Psychologist() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ALERT DETAIL MODAL */}
+      {selectedAlert && (
+        <AlertDetailModal
+          alert={selectedAlert}
+          isDark={isDark}
+          onClose={() => setSelectedAlert(null)}
+          onResolved={(alertId) => {
+            setLiveAlerts(prev => prev.filter(a => (a.alert_id ?? a.id) !== alertId));
+            setAlerts(prev => prev.filter(a => (a.id ?? a.alert_id) !== alertId));
+          }}
+        />
       )}
 
       {/* DELETE CONFIRM */}

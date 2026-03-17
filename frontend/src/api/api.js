@@ -83,3 +83,11 @@ export const submitTest = (testId, answers) =>
 export const fetchMyTestResults = () => request('/tests/results/me');
 export const fetchUserTestResults = (userId) => request(`/tests/results/user/${userId}`);
 
+// ── Recommendations ───────────────────────────────────────────
+export const fetchRecommendations = (userId) => request(`/recommendations/${userId}`);
+
+// ── Alerts (extended) ─────────────────────────────────────────
+export const resolveAlert = (alertId) =>
+  request(`/alerts/${alertId}/resolve`, { method: 'PATCH' });
+export const getAlertMessages = (alertId) => request(`/alerts/${alertId}/messages`);
+

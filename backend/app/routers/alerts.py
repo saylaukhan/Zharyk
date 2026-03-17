@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from ..database import get_db
-from ..models import Alert, User, UserRole
+from ..models import Alert, User, UserRole, ChatHistory
 from ..schemas import AlertOut, AlertRich
 from ..auth import require_roles
 
@@ -62,3 +62,41 @@ def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
     alert.resolved_at = func.now()
     db.commit()
     return {"ok": True}
+
+
+@router.get("/{alert_id}/messages")
+def get_alert_messages(alert_id: int, db: Session = Depends(get_db)):
+    """Return the last 5 chat messages from the session that triggered this alert.
+    Falls back to the messages_snapshot if the chat session has been deleted."""
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    # Try live messages from the session first
+    if alert.session_id:
+        messages = (
+            db.query(ChatHistory)
+            .filter(
+                ChatHistory.session_id == alert.session_id,
+                ChatHistory.role.in_(["user", "assistant"]),
+            )
+            .order_by(ChatHistory.created_at.desc())
+            .limit(5)
+            .all()
+        )
+        if messages:
+            return [
+                {
+                    "id": m.id,
+                    "role": m.role,
+                    "content": m.content,
+                    "created_at": m.created_at,
+                }
+                for m in reversed(messages)
+            ]
+
+    # Session deleted — return the snapshot saved at alert creation
+    if alert.messages_snapshot:
+        return alert.messages_snapshot
+
+    return []

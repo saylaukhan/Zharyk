@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, Enum, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -95,9 +95,13 @@ class Alert(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     psychologist_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    session_id = Column(Integer, ForeignKey("chat_sessions.id"), nullable=True)
     alert_type = Column(String)
     level = Column(Enum(RiskLevel))
     message = Column(Text)
+    reasoning = Column(Text, nullable=True)
+    metrics_snapshot = Column(JSON, nullable=True)
+    messages_snapshot = Column(JSON, nullable=True)
     is_resolved = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     resolved_at = Column(DateTime(timezone=True), nullable=True)

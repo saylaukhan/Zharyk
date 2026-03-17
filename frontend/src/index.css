@@ -461,3 +461,10 @@ input:focus, button:focus { outline: none; }
     border-color: var(--color-border);
 }
 
+
+/* ── Text selection on orange-background elements ───────── */
+.selection-teal::selection,
+.selection-teal *::selection {
+    background-color: #14B8A6;
+    color: #ffffff;
+}
