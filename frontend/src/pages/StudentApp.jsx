@@ -7,7 +7,7 @@ import {
   ArrowLeft, Search, Video, Clock, Layers, Headphones, Activity,
   Zap, BatteryLow, Heart, Rocket, Brain, SearchX, Flame, Sun,
   BookOpenCheck, Trophy, BarChart, User, MessageCircle, ClipboardList, LogOut, Edit2, Trash2, Check, X,
-  ChevronRight, ChevronLeft, CheckCircle, Target, Shield, AlertTriangle, Square
+  ChevronRight, ChevronLeft, CheckCircle, Target, Shield, AlertTriangle, Square, Pencil, Flag, Wind
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { Line, Radar } from 'react-chartjs-2'
@@ -17,7 +17,7 @@ import {
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
-import { fetchUserMetrics, fetchTests, fetchTestDetail, submitTest, fetchMyTestResults } from '../api/api'
+import { fetchUserMetrics, fetchTests, fetchTestDetail, submitTest, fetchMyTestResults, updateSettings, fetchStreak } from '../api/api'
 import { getTestLevelInfo } from '../utils/testLevels'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend, RadialLinearScale)
@@ -88,6 +88,15 @@ function getDynamicGreeting(metrics, testHistory) {
   return { timeGreeting, subtitle }
 }
 
+const ACHIEVEMENTS_DEF = [
+  { id: 'first_step',      icon: Flag,          label: 'Точка отсчёта',       desc: 'Пройдите первый диагностический тест',                                          earned_color: 'text-zharyq-orange', earned_border: 'border-orange-200', earned_border_dark: 'border-orange-800/60', earned_bg: 'bg-orange-50',  earned_bg_dark: 'bg-orange-900/30' },
+  { id: 'connected',       icon: MessageCircle, label: 'На связи',             desc: 'Проведите первую полноценную сессию с AI-ассистентом (мин. 5 сообщений)',       earned_color: 'text-zharyq-teal',   earned_border: 'border-teal-200',   earned_border_dark: 'border-teal-800/60',   earned_bg: 'bg-teal-50',    earned_bg_dark: 'bg-teal-900/30' },
+  { id: 'streak7',         icon: Flame,         label: 'В ритме заботы',       desc: 'Заходите в приложение 7 дней подряд',                                           earned_color: 'text-[#FF7100]',     earned_border: 'border-orange-200', earned_border_dark: 'border-orange-800/60', earned_bg: 'bg-orange-50',  earned_bg_dark: 'bg-orange-900/30' },
+  { id: 'zen_master',      icon: Wind,          label: 'Дзен-мастер',          desc: 'Снизьте уровень стресса на 15% и более за неделю',                              earned_color: 'text-blue-400',      earned_border: 'border-blue-200',   earned_border_dark: 'border-blue-800/60',   earned_bg: 'bg-blue-50',    earned_bg_dark: 'bg-blue-900/30' },
+  { id: 'course_finisher', icon: BookOpen,      label: 'Глубокое погружение',  desc: 'Полностью пройдите один рекомендованный курс',                                  earned_color: 'text-violet-400',    earned_border: 'border-violet-200', earned_border_dark: 'border-violet-800/60', earned_bg: 'bg-violet-50',  earned_bg_dark: 'bg-violet-900/30' },
+  { id: 'deep_convo',      icon: Heart,         label: 'Искренность',          desc: 'Откройтесь о сложных переживаниях и преодолейте их через диалог с ассистентом', earned_color: 'text-[#14B8A6]',     earned_border: 'border-teal-200',   earned_border_dark: 'border-teal-800/60',   earned_bg: 'bg-teal-50',    earned_bg_dark: 'bg-teal-900/30' },
+]
+
 export default function StudentApp() {
   const navigate = useNavigate()
   const { isDark } = useTheme()
@@ -108,7 +117,11 @@ export default function StudentApp() {
   const [editingSessionId, setEditingSessionId] = useState(null)
   const [editTitle, setEditTitle] = useState('')
   const [deleteConfirmSession, setDeleteConfirmSession] = useState(null)
+  const [privacySettings, setPrivacySettings] = useState({ personalized: false, encryption: false })
+  const [avatarUrl, setAvatarUrl] = useState(null)
+  const [streakData, setStreakData] = useState({ streak: 0, today_active: false, week_days: [false,false,false,false,false,false,false] })
   const eventSourceRef = useRef(null)
+  const avatarFileInputRef = useRef(null)
 
   // ── Voice recording state ──
   const [isRecording, setIsRecording] = useState(false)
@@ -194,6 +207,19 @@ export default function StudentApp() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Sync personalized mode and avatar from localStorage when user is loaded
+  useEffect(() => {
+    if (!authUser?.id) return
+    const saved = localStorage.getItem(`personalized_mode_${authUser.id}`)
+    setPrivacySettings(prev => ({ ...prev, personalized: saved === '1' }))
+    setAvatarUrl(localStorage.getItem(`avatar_${authUser.id}`))
+  }, [authUser?.id])
+
+  // Load real streak data
+  useEffect(() => {
+    fetchStreak().then(setStreakData).catch(() => {})
+  }, [])
+
   // Load test history on mount for the right sidebar
   useEffect(() => {
     fetchMyTestResults()
@@ -252,8 +278,9 @@ export default function StudentApp() {
       if (authUser?.id) {
         fetchUserMetrics(authUser.id).then(setMetrics).catch(console.error)
       }
-      // refresh test history
+      // refresh test history and streak
       fetchMyTestResults().catch(() => []).then(setTestHistory)
+      fetchStreak().then(setStreakData).catch(() => {})
     } catch (e) {
       console.error(e)
     } finally {
@@ -346,6 +373,7 @@ export default function StudentApp() {
         })
         .catch(console.error)
     }
+    fetchStreak().then(setStreakData).catch(() => {})
   }
 
   const navItems = [
@@ -569,6 +597,24 @@ export default function StudentApp() {
 
   const { text: chartText, grid: chartGrid } = getChartColors(isDark)
 
+  // Achievements computation
+  const earnedMap = {
+    first_step:      testHistory.length > 0,
+    connected:       messages.filter(m => m.role === 'user').length >= 5 || chatSessions.length > 1,
+    streak7:         streakData.streak >= 7,
+    zen_master:      (() => {
+      if (metrics.length < 2) return false
+      const recent = metrics[metrics.length - 1]
+      const older  = metrics[Math.max(0, metrics.length - 7)]
+      return older.stress > 0 && (older.stress - recent.stress) / older.stress >= 0.15
+    })(),
+    course_finisher: false,
+    deep_convo:      false,
+  }
+  const earnedCount = Object.values(earnedMap).filter(Boolean).length
+  const xpPoints    = earnedCount * 100 + testHistory.length * 50 + streakData.streak * 5
+  const osoznLevel  = testHistory.reduce((acc, t) => acc + ((t.involvement_score || 0) + (t.control_score || 0) + (t.risk_score || 0)), 0)
+
   // metrics теперь всегда отсортирован (старые -> новые)
   const lineLabels = metrics.length ? metrics.map(m => new Date(m.recorded_at).toLocaleDateString('ru-RU')) : ['Нет данных'];
   const dataStress = metrics.length ? metrics.map(m => m.stress) : [0];
@@ -617,6 +663,39 @@ export default function StudentApp() {
         angleLines: { color: chartGrid },
       }
     }
+  }
+
+  function handlePersonalizedToggle() {
+    const next = !privacySettings.personalized
+    setPrivacySettings(prev => ({ ...prev, personalized: next }))
+    if (authUser?.id) {
+      localStorage.setItem(`personalized_mode_${authUser.id}`, next ? '1' : '0')
+    }
+    updateSettings({ personalized_mode: next }).catch(() => {})
+  }
+
+  function handleAvatarUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = 128
+        canvas.height = 128
+        const ctx = canvas.getContext('2d')
+        const minSide = Math.min(img.width, img.height)
+        const sx = (img.width - minSide) / 2
+        const sy = (img.height - minSide) / 2
+        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, 128, 128)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+        setAvatarUrl(dataUrl)
+        if (authUser?.id) localStorage.setItem(`avatar_${authUser.id}`, dataUrl)
+      }
+      img.src = ev.target.result
+    }
+    reader.readAsDataURL(file)
   }
 
   return (
@@ -680,19 +759,28 @@ export default function StudentApp() {
           </div>
         </div>
         <div className="pt-4 border-t border-zharyq-border mt-4 flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-tr from-zharyq-teal to-blue-400 rounded-full flex justify-center items-center text-white font-bold text-xs relative">
-            {authUser?.username?.[0]?.toUpperCase() || 'S'}
-            <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
-              <div className="bg-orange-100 text-zharyq-orange text-[8px] font-bold px-1 rounded-full border border-orange-200">🔥 5</div>
+          <button onClick={() => setView('profile')} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-75 transition-opacity text-left">
+            <div className={`w-8 h-8 rounded-full flex justify-center items-center font-bold text-xs shrink-0 overflow-hidden ${privacySettings.personalized ? 'bg-gradient-to-tr from-zharyq-teal to-blue-400 text-white' : (isDark ? 'bg-[#27272A] border border-[#3F3F46]' : 'bg-[#F9FAFB] border border-[#E5E7EB]')}`}>
+              {privacySettings.personalized && avatarUrl
+                ? <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                : privacySettings.personalized
+                  ? <span className="text-white">{authUser?.username?.[0]?.toUpperCase() || 'S'}</span>
+                  : <User size={15} strokeWidth={1.5} className={isDark ? 'text-zinc-500' : 'text-[#9CA3AF]'} />
+              }
             </div>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-zharyq-dark truncate">{authUser?.username || 'Студент'}</p>
-            <p className="text-[10px] text-zharyq-gray truncate flex items-center gap-1">
-              <GraduationCap size={12} /> {authUser?.class_name || 'Не указан'}
-            </p>
-          </div>
-          <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title="Выйти">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-medium text-zharyq-dark truncate">{authUser?.username || 'Студент'}</p>
+                {streakData.streak > 0 && (
+                  <span className="bg-orange-100 text-zharyq-orange text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-orange-200 shrink-0">🔥 {streakData.streak}</span>
+                )}
+              </div>
+              <p className="text-[10px] text-zharyq-gray truncate flex items-center gap-1">
+                <GraduationCap size={12} /> {authUser?.class_name || 'Не указан'}
+              </p>
+            </div>
+          </button>
+          <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors shrink-0" title="Выйти">
             <LogOut size={16} />
           </button>
         </div>
@@ -1266,25 +1354,36 @@ export default function StudentApp() {
                   <Line data={lineData} options={lineOptions} />
                 </div>
               </div>
-              <div className="border border-zharyq-border rounded-2xl p-5 mb-6 bg-zharyq-bg">
-                <h2 className="text-sm font-semibold mb-4">Достижения</h2>
+              <div className={`border rounded-2xl p-5 mb-6 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-zharyq-bg border-zharyq-border'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : ''}`}>Достижения</h2>
+                  <span className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{earnedCount} / {ACHIEVEMENTS_DEF.length} разблокировано</span>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[
-                    { icon: Flame, bg: 'bg-orange-50', color: 'text-zharyq-orange', title: 'Серия 5 дней', desc: 'Вы заботитесь о себе всю неделю. Так держать!' },
-                    { icon: Sun, bg: 'bg-zharyq-teal-light', color: 'text-zharyq-teal', title: 'Первый чек-ин', desc: 'Вы сделали первый шаг к осознанности.' },
-                    { icon: BookOpenCheck, bg: 'bg-blue-50', color: 'text-blue-500', title: 'Первый курс завершён', desc: '«Эмоциональный интеллект» пройден полностью.' },
-                    { icon: Trophy, bg: 'bg-gray-100', color: 'text-zharyq-gray', title: 'Серия 30 дней', desc: 'Заходите каждый день в течение месяца.', locked: true },
-                  ].map((a, i) => (
-                    <div key={i} className={`achievement-card flex items-start gap-3 border border-zharyq-border bg-white rounded-xl p-3 ${a.locked ? 'opacity-40' : ''}`}>
-                      <div className={`w-10 h-10 rounded-xl ${a.bg} flex items-center justify-center shrink-0`}>
-                        <a.icon size={20} className={a.color} />
+                  {ACHIEVEMENTS_DEF.map((ach) => {
+                    const earned = earnedMap[ach.id]
+                    return (
+                      <div key={ach.id} className={`relative group flex items-start gap-3 border rounded-xl p-3 transition-all ${
+                        earned
+                          ? `${isDark ? ach.earned_border_dark : ach.earned_border} ${isDark ? 'bg-[#18181B]' : 'bg-white'}`
+                          : `${isDark ? 'border-[#3F3F46] bg-[#27272A] opacity-40' : 'border-zharyq-border bg-white opacity-40'}`
+                      }`}>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${earned ? (isDark ? ach.earned_bg_dark : ach.earned_bg) : (isDark ? 'bg-[#3F3F46]' : 'bg-gray-100')}`}>
+                          <ach.icon size={20} strokeWidth={1.5} className={earned ? ach.earned_color : (isDark ? 'text-zinc-600' : 'text-zharyq-gray')} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${earned ? (isDark ? 'text-zinc-100' : 'text-zharyq-dark') : (isDark ? 'text-zinc-400' : 'text-zharyq-dark')}`}>{ach.label}</p>
+                          <p className={`text-xs mt-0.5 leading-relaxed ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{ach.desc}</p>
+                        </div>
+                        {!earned && (
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-[#1F2937] text-white text-[10px] leading-snug rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 text-center shadow-lg">
+                            Выполните условие, чтобы разблокировать это достижение
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#1F2937]" />
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <p className="text-sm font-medium">{a.title}</p>
-                        <p className="text-xs text-zharyq-gray mt-0.5 leading-relaxed">{a.desc}</p>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -1343,6 +1442,196 @@ export default function StudentApp() {
             </div>
           </div>
         )}
+
+        {/* PROFILE VIEW */}
+        {view === 'profile' && (() => {
+          const BADGE_HOVER = ['hover:text-zharyq-orange', 'hover:text-zharyq-teal', 'hover:text-blue-500', 'hover:text-amber-500']
+          const todayMon = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1
+          return (
+            <div className="flex-1 overflow-y-auto p-6 md:p-8 animate-fade-in-up">
+              <div className="max-w-[800px] mx-auto">
+
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-8">
+                  <button onClick={() => setView('chat')} className={`transition-colors ${isDark ? 'text-zinc-400 hover:text-zinc-100' : 'text-zharyq-gray hover:text-zharyq-dark'}`}>
+                    <ArrowLeft size={20} strokeWidth={1.5} />
+                  </button>
+                  <h1 className={`text-2xl font-semibold ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>Профиль</h1>
+                </div>
+
+                {/* User info */}
+                <div className={`border rounded-2xl p-6 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-[#F9FAFB] border-[#E5E7EB]'}`}>
+                  <div className="flex items-center gap-5">
+                    <div className="relative shrink-0">
+                      <div className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold border overflow-hidden ${isDark ? 'bg-[#18181B] border-[#3F3F46] text-zinc-100' : 'bg-white border-[#E5E7EB] text-[#1F2937]'}`}>
+                        {privacySettings.personalized && avatarUrl
+                          ? <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                          : privacySettings.personalized
+                            ? (authUser?.username?.[0]?.toUpperCase() || 'S')
+                            : <User size={32} strokeWidth={1.5} className={isDark ? 'text-zinc-600' : 'text-[#D1D5DB]'} />
+                        }
+                      </div>
+                      {privacySettings.personalized && (
+                        <button
+                          onClick={() => avatarFileInputRef.current?.click()}
+                          className="absolute -top-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: 'var(--color-accent)', border: '2px solid var(--color-bg)' }}
+                          title="Изменить фото"
+                        >
+                          <Pencil size={11} strokeWidth={2} color="#fff" />
+                        </button>
+                      )}
+                      <input ref={avatarFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h2 className={`text-2xl font-semibold mb-0.5 ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>
+                        {authUser?.username || 'Студент'}
+                      </h2>
+                      <p className={`text-sm mb-2.5 ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>
+                        {authUser?.class_name || 'Класс не указан'}
+                      </p>
+                      <span className={`inline-flex items-center text-xs font-medium px-3 py-0.5 rounded-full border ${isDark ? 'border-[#2DD4BF] text-[#2DD4BF]' : 'border-[#14B8A6] text-[#14B8A6]'}`}>
+                        Студент
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div className={`h-px my-8 ${isDark ? 'bg-[#3F3F46]' : 'bg-[#E5E7EB]'}`} />
+
+                {/* Gamification */}
+                <h2 className={`text-lg font-medium mb-5 ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>Достижения и прогресс</h2>
+
+                {/* Streak */}
+                <div className={`border rounded-2xl p-5 mb-4 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-[#F9FAFB] border-[#E5E7EB]'}`}>
+                  <div className="flex items-center gap-2.5 mb-5">
+                    <Flame size={20} strokeWidth={1.5} className="text-zharyq-orange" />
+                    <span className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>
+                      {streakData.streak} {streakData.streak === 1 ? 'день' : streakData.streak >= 2 && streakData.streak <= 4 ? 'дня' : 'дней'} заботы о себе
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day, i) => {
+                      const isToday = i === todayMon
+                      const active = streakData.week_days[i]
+                      return (
+                        <div key={day} className="flex flex-col items-center gap-1.5 flex-1">
+                          <span className={`text-[11px] font-medium ${isToday ? (isDark ? 'text-zinc-100' : 'text-[#1F2937]') : (isDark ? 'text-zinc-500' : 'text-[#6B7280]')}`}>{day}</span>
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center border transition-colors ${
+                            isToday && active
+                              ? 'border-zharyq-orange bg-zharyq-orange'
+                              : isToday
+                              ? (isDark ? 'border-[#3F3F46] bg-[#27272A]' : 'border-[#D1D5DB] bg-white')
+                              : active
+                              ? (isDark ? 'border-orange-700 bg-orange-900/30' : 'border-orange-200 bg-orange-50')
+                              : (isDark ? 'border-[#3F3F46]' : 'border-[#E5E7EB]')
+                          }`}>
+                            {active && (
+                              <span className={`w-2 h-2 rounded-full ${isToday ? 'bg-white' : 'bg-zharyq-orange'}`} />
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Stats: осознанность + XP */}
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className={`border rounded-2xl p-4 flex flex-col items-center justify-center gap-1 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-[#F9FAFB] border-[#E5E7EB]'}`}>
+                    <span className={`text-2xl font-bold ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>{osoznLevel}</span>
+                    <span className={`text-[10px] text-center leading-tight ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>Уровень осознанности</span>
+                  </div>
+                  <div className={`border rounded-2xl p-4 flex flex-col items-center justify-center gap-1 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-[#F9FAFB] border-[#E5E7EB]'}`}>
+                    <span className="text-2xl font-bold text-zharyq-orange">{xpPoints} XP</span>
+                    <span className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>Опыт</span>
+                  </div>
+                </div>
+
+                {/* Achievements grid */}
+                <div className={`border rounded-2xl p-5 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-[#F9FAFB] border-[#E5E7EB]'}`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>Достижения</h3>
+                    <span className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>{earnedCount} / {ACHIEVEMENTS_DEF.length}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {ACHIEVEMENTS_DEF.map((ach) => {
+                      const earned = earnedMap[ach.id]
+                      return (
+                        <div key={ach.id} className="relative group">
+                          <div className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all cursor-default ${
+                            earned
+                              ? `${isDark ? ach.earned_border_dark : ach.earned_border} ${isDark ? 'bg-[#18181B]' : 'bg-white'}`
+                              : isDark ? 'border-[#3F3F46] opacity-40' : 'border-[#E5E7EB] opacity-40'
+                          }`}>
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${earned ? (isDark ? ach.earned_bg_dark : ach.earned_bg) : (isDark ? 'bg-[#27272A]' : 'bg-[#F9FAFB]')}`}>
+                              <ach.icon
+                                size={20}
+                                strokeWidth={1.5}
+                                className={earned ? ach.earned_color : (isDark ? 'text-zinc-600' : 'text-[#9CA3AF]')}
+                              />
+                            </div>
+                            <p className={`text-[10px] font-medium text-center leading-tight ${
+                              earned ? (isDark ? 'text-zinc-200' : 'text-[#1F2937]') : (isDark ? 'text-zinc-500' : 'text-[#9CA3AF]')
+                            }`}>{ach.label}</p>
+                          </div>
+                          {/* Tooltip for locked */}
+                          {!earned && (
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 bg-[#1F2937] text-white text-[10px] leading-snug rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 text-center shadow-lg">
+                              {ach.desc}
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#1F2937]" />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div className={`h-px my-8 ${isDark ? 'bg-[#3F3F46]' : 'bg-[#E5E7EB]'}`} />
+
+                {/* Privacy settings */}
+                <h2 className={`text-lg font-medium mb-5 ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>Настройки приватности</h2>
+                <div className={`border rounded-2xl ${isDark ? 'border-[#3F3F46]' : 'border-[#E5E7EB]'}`}>
+                  {[
+                    { key: 'personalized', label: 'Персонализированный режим', desc: 'Психолог может видеть ваше имя при обращении за помощью' },
+                    { key: 'encryption', label: 'Шифрование истории', desc: 'Локальное скрытие истории сеансов чата' },
+                  ].map((s, idx, arr) => (
+                    <div
+                      key={s.key}
+                      className={`flex items-center gap-4 px-5 py-4
+                        ${idx === 0 ? 'rounded-t-2xl' : ''}
+                        ${idx === arr.length - 1 ? 'rounded-b-2xl' : ''}
+                        ${idx < arr.length - 1 ? (isDark ? 'border-b border-[#3F3F46]' : 'border-b border-[#E5E7EB]') : ''}
+                        ${isDark ? 'bg-[#27272A]' : 'bg-[#F9FAFB]'}`}
+                    >
+                      <div className="flex-1 min-w-0 pr-4">
+                        <p className={`text-sm font-medium ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>{s.label}</p>
+                        <p className={`text-xs mt-0.5 leading-relaxed ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>{s.desc}</p>
+                      </div>
+                      <button
+                        onClick={() => s.key === 'personalized' ? handlePersonalizedToggle() : setPrivacySettings(prev => ({ ...prev, [s.key]: !prev[s.key] }))}
+                        className={`relative rounded-full overflow-hidden transition-colors duration-150 shrink-0 ${
+                          privacySettings[s.key]
+                            ? (isDark ? 'bg-[#FF851B]' : 'bg-[#FF7100]')
+                            : (isDark ? 'bg-[#3F3F46]' : 'bg-[#D1D5DB]')
+                        }`}
+                        style={{ width: '40px', height: '22px', minWidth: '40px' }}
+                      >
+                        <span
+                          className={`absolute top-[3px] w-4 h-4 bg-white rounded-full transition-all duration-150 ${privacySettings[s.key] ? 'left-[19px]' : 'left-[3px]'}`}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+              </div>
+            </div>
+          )
+        })()}
       </main>
 
       {/* RIGHT SIDEBAR */}

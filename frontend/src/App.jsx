@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './context/ThemeContext'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import OnboardingModal from './components/OnboardingModal'
 import Landing from './pages/Landing'
 import StudentApp from './pages/StudentApp'
 import Psychologist from './pages/Psychologist'
@@ -49,6 +50,7 @@ export default function App() {
             } />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          <OnboardingModal />
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>

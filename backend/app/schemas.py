@@ -39,6 +39,7 @@ class UserCreate(UserBase):
 
 class UserOut(UserBase):
     id: int
+    personalized_mode: bool = False
     is_active: bool
     created_at: datetime
 
@@ -329,6 +330,7 @@ class StudentMetrics(BaseModel):
     role: UserRole
     class_name: Optional[str] = None
     anonymous_id: Optional[str] = None
+    personalized_mode: bool = False
     is_active: bool
     created_at: datetime
     stress: float = 0

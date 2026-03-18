@@ -23,6 +23,7 @@ async function request(endpoint, options = {}) {
 }
 
 export const fetchMe = () => request('/auth/me');
+export const updateSettings = (data) => request('/auth/me/settings', { method: 'PATCH', body: JSON.stringify(data) });
 export const fetchAlertsRich = () => request('/alerts/rich');
 export const fetchAlerts = () => request('/alerts/');
 export const fetchStudentsWithMetrics = () => request('/users/students');
@@ -70,6 +71,7 @@ export const fetchStressDistribution = () => request('/analytics/stress-distribu
 export const fetchDirectorDashboard = () => request('/analytics/director-dashboard');
 export const fetchUserCheckins = (userId) => request(`/checkins/${userId}`); // Need to verify if it's /checkins/user/${userId} or something else. I'll use a generic one or assume /checkins/user/:user_id
 export const fetchUserMetrics = (userId) => request(`/analytics/user/${userId}`);
+export const fetchStreak = () => request('/analytics/streak');
 export const fetchCourses = () => request('/courses/');
 
 // ── Tests ────────────────────────────────────────────────────
