@@ -128,26 +128,76 @@ def submit_test(
     involvement_score = 0
     control_score = 0
     risk_score = 0
+    total_score = 0
+    overall_level = "medium"
+    inv_level = ctrl_level = rsk_level = None
 
-    for qid_str, answer_val in payload.answers.items():
-        q = q_map.get(str(qid_str))
-        if not q:
-            continue
-        pts = _score_answer(int(answer_val), q.is_reverse)
-
-        if q.subscale == "involvement":
-            involvement_score += pts
-        elif q.subscale == "control":
-            control_score += pts
-        elif q.subscale == "risk_taking":
-            risk_score += pts
-
-    total_score = involvement_score + control_score + risk_score
-
-    overall_level = _level_hardiness(total_score)
-    inv_level = _level_involvement(involvement_score)
-    ctrl_level = _level_control(control_score)
-    rsk_level = _level_risk(risk_score)
+    if test.slug == "hardiness-maddi":
+        for qid_str, answer_val in payload.answers.items():
+            q = q_map.get(str(qid_str))
+            if not q: continue
+            pts = _score_answer(int(answer_val), q.is_reverse)
+            if q.subscale == "involvement": involvement_score += pts
+            elif q.subscale == "control": control_score += pts
+            elif q.subscale == "risk_taking": risk_score += pts
+            
+        total_score = involvement_score + control_score + risk_score
+        overall_level = _level_hardiness(total_score)
+        inv_level = _level_involvement(involvement_score)
+        ctrl_level = _level_control(control_score)
+        rsk_level = _level_risk(risk_score)
+    else:
+        for qid_str, answer_val in payload.answers.items():
+            q = q_map.get(str(qid_str))
+            if not q: continue
+            v = int(answer_val)
+            
+            if test.slug == "beck-hopelessness":
+                is_true = v > 1
+                if q.is_reverse:
+                    pts = 1 if not is_true else 0
+                else:
+                    pts = 1 if is_true else 0
+                total_score += pts
+            elif test.slug == "russell-loneliness":
+                pts = _score_answer(v, q.is_reverse)
+                total_score += pts
+            elif test.slug == "young-internet":
+                pts = v + 1  # 1 to 4 (scale has 5 items but UI offers 4, approx fine)
+                total_score += pts
+            elif test.slug == "rosenberg":
+                if q.subscale == "self_respect":
+                    involvement_score += _score_answer(v, q.is_reverse)
+                elif q.subscale == "self_deprecation":
+                    control_score += _score_answer(v, q.is_reverse)
+            else:
+                total_score += _score_answer(v, q.is_reverse)
+        
+        if test.slug == "rosenberg":
+            total_score = involvement_score + control_score
+            if involvement_score >= 8: inv_level = "high"
+            elif involvement_score >= 5: inv_level = "medium"
+            else: inv_level = "low"
+            
+            if control_score >= 8: ctrl_level = "high"
+            elif control_score >= 5: ctrl_level = "medium"
+            else: ctrl_level = "low"
+            # Overriding names for UI
+            overall_level = inv_level
+            
+        elif test.slug == "beck-hopelessness":
+             if total_score <= 3: overall_level = "low"
+             elif total_score <= 8: overall_level = "medium"
+             elif total_score <= 14: overall_level = "high"
+             else: overall_level = "critical"
+        elif test.slug == "russell-loneliness":
+             if total_score <= 20: overall_level = "low"
+             elif total_score <= 40: overall_level = "medium"
+             else: overall_level = "high"
+        elif test.slug == "young-internet":
+             if total_score <= 49: overall_level = "low"
+             elif total_score <= 79: overall_level = "medium"
+             else: overall_level = "high"
 
     recommendations = _generate_recommendations(overall_level, db)
 
@@ -167,56 +217,58 @@ def submit_test(
     )
     db.add(result)
 
-    # Update UserMetric with derived stress value
-    stress_val = _hardiness_to_stress(total_score)
-    m_stress = stress_val
-    m_burnout = 0
-    m_anxiety = max(0, 100 - control_score * 3)
-    m_motivation = min(100, involvement_score * 2.5)
-    m_emotion = min(100, risk_score * 6)
+    if test.slug == "hardiness-maddi":
+        # Update UserMetric with derived stress value
+        stress_val = _hardiness_to_stress(total_score)
+        m_stress = stress_val
+        m_burnout = 0
+        m_anxiety = max(0, 100 - control_score * 3)
+        m_motivation = min(100, involvement_score * 2.5)
+        m_emotion = min(100, risk_score * 6)
 
-    metric = UserMetric(
-        user_id=current_user.id,
-        stress=m_stress,
-        burnout=m_burnout,
-        anxiety=m_anxiety,
-        motivation=m_motivation,
-        emotion=m_emotion,
-    )
-    db.add(metric)
-
-    # Alert check: negative metrics >= 70 or positive metrics <= 20
-    _LEVEL_RANK = {"medium": 1, "high": 2, "critical": 3}
-    from ..routers.checkins import _check_metric_alert
-    risk, alert_type = _check_metric_alert(m_stress, m_burnout, m_anxiety, m_motivation, m_emotion)
-    if risk:
-        existing = (
-            db.query(Alert)
-            .filter(Alert.user_id == current_user.id, Alert.is_resolved == False)
-            .order_by(Alert.created_at.desc())
-            .first()
+        metric = UserMetric(
+            user_id=current_user.id,
+            stress=m_stress,
+            burnout=m_burnout,
+            anxiety=m_anxiety,
+            motivation=m_motivation,
+            emotion=m_emotion,
         )
-        existing_rank = _LEVEL_RANK.get(existing.level.value, 0) if existing else 0
-        if existing_rank < _LEVEL_RANK.get(risk.value, 0):
-            db.add(Alert(
-                user_id=current_user.id,
-                alert_type=f"Тест: {alert_type}",
-                level=risk,
-                message=(
-                    f"Результат теста «{test.title}»: стресс={m_stress:.0f}, "
-                    f"тревожность={m_anxiety:.0f}, мотивация={m_motivation:.0f}, эмоции={m_emotion:.0f}"
-                ),
-                metrics_snapshot={
-                    "stress": m_stress, "burnout": m_burnout, "anxiety": m_anxiety,
-                    "motivation": m_motivation, "emotion": m_emotion,
-                },
-            ))
+        db.add(metric)
+
+        # Alert check: negative metrics >= 70 or positive metrics <= 20
+        _LEVEL_RANK = {"medium": 1, "high": 2, "critical": 3}
+        from ..routers.checkins import _check_metric_alert
+        risk, alert_type = _check_metric_alert(m_stress, m_burnout, m_anxiety, m_motivation, m_emotion)
+        if risk:
+            existing = (
+                db.query(Alert)
+                .filter(Alert.user_id == current_user.id, Alert.is_resolved == False)
+                .order_by(Alert.created_at.desc())
+                .first()
+            )
+            existing_rank = _LEVEL_RANK.get(existing.level.value, 0) if existing else 0
+            if existing_rank < _LEVEL_RANK.get(risk.value, 0):
+                db.add(Alert(
+                    user_id=current_user.id,
+                    alert_type=f"Тест: {alert_type}",
+                    level=risk,
+                    message=(
+                        f"Результат теста «{test.title}»: стресс={m_stress:.0f}, "
+                        f"тревожность={m_anxiety:.0f}, мотивация={m_motivation:.0f}, эмоции={m_emotion:.0f}"
+                    ),
+                    metrics_snapshot={
+                        "stress": m_stress, "burnout": m_burnout, "anxiety": m_anxiety,
+                        "motivation": m_motivation, "emotion": m_emotion,
+                    },
+                ))
 
     db.commit()
     db.refresh(result)
 
     return {
         **{c.name: getattr(result, c.name) for c in result.__table__.columns},
+        "test_slug": test.slug,
         "test_title": test.title,
     }
 
@@ -238,6 +290,7 @@ def my_results(
         test = db.query(Test).filter(Test.id == r.test_id).first()
         out.append({
             **{c.name: getattr(r, c.name) for c in r.__table__.columns},
+            "test_slug": test.slug if test else "",
             "test_title": test.title if test else "",
         })
     return out
@@ -261,6 +314,7 @@ def user_results(
         test = db.query(Test).filter(Test.id == r.test_id).first()
         out.append({
             **{c.name: getattr(r, c.name) for c in r.__table__.columns},
+            "test_slug": test.slug if test else "",
             "test_title": test.title if test else "",
         })
     return out

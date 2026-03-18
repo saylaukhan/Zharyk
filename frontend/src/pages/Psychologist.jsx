@@ -23,6 +23,7 @@ import {
   createNote, updateNote, deleteNote,
   resolveAlert
 } from '../api/api'
+import { getTestLevelInfo } from '../utils/testLevels'
 import { useAlertWebSocket } from '../hooks/useAlertWebSocket'
 import AlertBanner from '../components/AlertBanner'
 import AlertDetailModal from '../components/AlertDetailModal'
@@ -1251,34 +1252,37 @@ export default function Psychologist() {
                 ) : (
                   <div className="flex flex-col gap-2">
                     {userTestResults.map(r => {
-                      const levelStyle = r.overall_level === 'low' ? 'text-red-600 bg-red-50 border-red-100'
-                        : r.overall_level === 'medium' ? 'text-amber-600 bg-amber-50 border-amber-100'
-                        : 'text-green-700 bg-green-50 border-green-100'
-                      const levelLabel = r.overall_level === 'low' ? 'Низкий' : r.overall_level === 'medium' ? 'Средний' : 'Высокий'
+                      const { label: levelLabel, style: levelStyle } = getTestLevelInfo(r.test_slug, r.overall_level);
                       return (
                         <div key={r.id} className="border border-zharyq-border rounded-xl p-3">
                           <div className="flex items-center justify-between mb-2">
                             <p className="text-xs font-medium">{r.test_title}</p>
                             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${levelStyle}`}>{levelLabel}</span>
                           </div>
-                          <div className="grid grid-cols-4 gap-1 text-center">
-                            <div>
-                              <p className="text-[9px] text-zharyq-gray">Общий</p>
-                              <p className="text-sm font-bold">{r.total_score}</p>
+                          {r.test_slug === 'hardiness-maddi' ? (
+                            <div className="grid grid-cols-4 gap-1 text-center">
+                              <div>
+                                <p className="text-[9px] text-zharyq-gray">Общий</p>
+                                <p className="text-sm font-bold">{r.total_score}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] text-zharyq-gray">Вовлеч.</p>
+                                <p className="text-sm font-bold">{r.involvement_score}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] text-zharyq-gray">Контроль</p>
+                                <p className="text-sm font-bold">{r.control_score}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] text-zharyq-gray">Риск</p>
+                                <p className="text-sm font-bold">{r.risk_score}</p>
+                              </div>
                             </div>
+                          ) : (
                             <div>
-                              <p className="text-[9px] text-zharyq-gray">Вовлеч.</p>
-                              <p className="text-sm font-bold">{r.involvement_score}</p>
+                               <p className="text-[10px] text-zharyq-gray"><span className="font-semibold text-zharyq-dark">{r.total_score}</span> баллов</p>
                             </div>
-                            <div>
-                              <p className="text-[9px] text-zharyq-gray">Контроль</p>
-                              <p className="text-sm font-bold">{r.control_score}</p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] text-zharyq-gray">Риск</p>
-                              <p className="text-sm font-bold">{r.risk_score}</p>
-                            </div>
-                          </div>
+                          )}
                           <p className="text-[10px] text-zharyq-gray mt-2">{new Date(r.created_at).toLocaleDateString('ru-RU')}</p>
                         </div>
                       )

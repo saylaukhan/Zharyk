@@ -407,6 +407,7 @@ class TestResultOut(BaseModel):
     id: int
     user_id: int
     test_id: int
+    test_slug: Optional[str] = None
     test_title: Optional[str] = None
     total_score: int = 0
     involvement_score: int = 0

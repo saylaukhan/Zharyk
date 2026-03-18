@@ -18,6 +18,7 @@ import {
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
 import { fetchUserMetrics, fetchTests, fetchTestDetail, submitTest, fetchMyTestResults } from '../api/api'
+import { getTestLevelInfo } from '../utils/testLevels'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend, RadialLinearScale)
 
@@ -36,12 +37,6 @@ const DEFAULT_META = { icon: BookOpen, iconColor: 'text-zharyq-gray', bg: 'bg-gr
 const FILTERS = ['all', 'Стресс', 'Выгорание', 'Эмоции', 'Мотивация', 'Тревожность']
 const FILTER_LABELS = { all: 'Все', 'Стресс': 'Стресс', 'Выгорание': 'Выгорание', 'Эмоции': 'Эмоции', 'Мотивация': 'Мотивация', 'Тревожность': 'Тревожность' }
 
-const LEVEL_LABELS = { low: 'Низкий', medium: 'Средний', high: 'Высокий' }
-const LEVEL_STYLES = {
-  low: 'text-red-600 bg-red-50 border-red-100',
-  medium: 'text-amber-600 bg-amber-50 border-amber-100',
-  high: 'text-green-700 bg-green-50 border-green-100',
-}
 const ANSWER_OPTIONS = [
   { value: 0, label: 'Нет' },
   { value: 1, label: 'Скорее нет, чем да' },
@@ -949,8 +944,8 @@ export default function StudentApp() {
                       <div className="border border-zharyq-border rounded-xl p-3 bg-white">
                         <p className="text-[10px] text-zharyq-gray uppercase tracking-wide mb-1">Общий балл</p>
                         <p className="text-2xl font-bold text-zharyq-dark">{testResult.total_score}</p>
-                        <span className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full border mt-1 ${LEVEL_STYLES[testResult.overall_level] || ''}`}>
-                          {LEVEL_LABELS[testResult.overall_level] || testResult.overall_level}
+                        <span className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full border mt-1 ${getTestLevelInfo(activeTest.slug, testResult.overall_level).style}`}>
+                          {getTestLevelInfo(activeTest.slug, testResult.overall_level).label}
                         </span>
                       </div>
                       {[
@@ -1170,8 +1165,8 @@ export default function StudentApp() {
                                     <td className="px-5 py-3.5 font-medium text-xs">{row.test_title}</td>
                                     <td className="px-5 py-3.5 text-xs font-bold">{row.total_score}</td>
                                     <td className="px-5 py-3.5">
-                                      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold border px-2 py-0.5 rounded-full ${LEVEL_STYLES[row.overall_level] || ''}`}>
-                                        {LEVEL_LABELS[row.overall_level] || row.overall_level}
+                                      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold border px-2 py-0.5 rounded-full ${getTestLevelInfo(row.test_slug, row.overall_level).style}`}>
+                                        {getTestLevelInfo(row.test_slug, row.overall_level).label}
                                       </span>
                                     </td>
                                   </tr>
@@ -1396,21 +1391,54 @@ export default function StudentApp() {
           </div>
 
           {/* Show latest test subscale summary */}
-          {testHistory[0] && (
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-              {[
-                { label: 'Вовлечённость', value: testHistory[0].involvement_score, level: testHistory[0].involvement_level },
-                { label: 'Контроль', value: testHistory[0].control_score, level: testHistory[0].control_level },
-                { label: 'Принятие риска', value: testHistory[0].risk_score, level: testHistory[0].risk_level },
-              ].map(s => (
-                <div key={s.label} className="border border-zharyq-border rounded-lg p-2">
-                  <p className="text-[9px] text-zharyq-gray">{s.label}</p>
-                  <p className="text-lg font-bold">{s.value}</p>
-                  <span className={`inline-flex text-[8px] font-semibold px-1.5 py-0.5 rounded-full border ${LEVEL_STYLES[s.level] || ''}`}>
-                    {LEVEL_LABELS[s.level] || '—'}
-                  </span>
+          {(() => {
+            const hardinessTest = testHistory.find(t => t.test_slug === 'hardiness-maddi');
+            if (hardinessTest) {
+              return (
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                  {[
+                    { label: 'Вовлечённость', value: hardinessTest.involvement_score, level: hardinessTest.involvement_level },
+                    { label: 'Контроль', value: hardinessTest.control_score, level: hardinessTest.control_level },
+                    { label: 'Принятие риска', value: hardinessTest.risk_score, level: hardinessTest.risk_level },
+                  ].map(s => (
+                    <div key={s.label} className="border border-zharyq-border rounded-lg p-2">
+                      <p className="text-[9px] text-zharyq-gray">{s.label}</p>
+                      <p className="text-lg font-bold">{s.value}</p>
+                      <span className={`inline-flex text-[8px] font-semibold px-1.5 py-0.5 rounded-full border ${getTestLevelInfo('hardiness-maddi', s.level).style}`}>
+                        {getTestLevelInfo('hardiness-maddi', s.level).label}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )
+            }
+            return null;
+          })()}
+
+          {/* New test results fields below the profile but above AI recs */}
+          {testHistory.filter(t => t.test_slug !== 'hardiness-maddi').length > 0 && (
+            <div className="mt-6 mb-6">
+              <h4 className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Результаты других тестов</h4>
+              <div className="space-y-2">
+                {Object.values(
+                  testHistory
+                    .filter(t => t.test_slug !== 'hardiness-maddi' && t.test_slug)
+                    .reduce((acc, curr) => {
+                      if (!acc[curr.test_slug]) acc[curr.test_slug] = curr;
+                      return acc;
+                    }, {})
+                ).map(test => (
+                  <div key={test.id} className="bg-zharyq-bg border border-zharyq-border rounded-xl p-3 flex justify-between items-center transition-opacity hover:opacity-90">
+                    <div className="pr-4">
+                      <p className="text-xs font-semibold text-zharyq-dark mb-0.5">{test.test_title}</p>
+                      <p className="text-[10px] font-medium text-zharyq-gray">Результат: {test.total_score} баллов</p>
+                    </div>
+                    <span className={`text-[10px] whitespace-nowrap uppercase font-bold px-2.5 py-1 rounded-full border shrink-0 ${getTestLevelInfo(test.test_slug, test.overall_level).style}`}>
+                      {getTestLevelInfo(test.test_slug, test.overall_level).label}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
