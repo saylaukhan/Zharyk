@@ -13,6 +13,18 @@ class UserRegister(BaseModel):
     class_name: Optional[str] = None
 
 
+class UserBatchItemResult(BaseModel):
+    username: str
+    success: bool
+    error: Optional[str] = None
+
+
+class UserBatchResult(BaseModel):
+    successful: int
+    failed: int
+    details: List[UserBatchItemResult]
+
+
 class UserLogin(BaseModel):
     username: str
     password: str

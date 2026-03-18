@@ -4,12 +4,59 @@ from typing import List, Optional
 
 from ..database import get_db
 from ..models import User, UserMetric, TherapySession, CourseProgress, CheckIn
-from ..schemas import UserOut, StudentMetrics, UserRegister
+from ..schemas import UserOut, StudentMetrics, UserRegister, UserBatchResult, UserBatchItemResult
 from sqlalchemy import func
 from ..auth import get_current_user, require_roles
 from ..models import UserRole
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+@router.post("/batch", response_model=UserBatchResult)
+def create_users_batch(
+    users_data: List[UserRegister],
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.director)),
+):
+    from ..auth import hash_password
+    
+    successful = 0
+    failed = 0
+    details = []
+    
+    for user_data in users_data:
+        # Check if username exists
+        user_by_username = db.query(User).filter(User.username == user_data.username).first()
+        if user_by_username:
+            failed += 1
+            details.append(UserBatchItemResult(username=user_data.username, success=False, error="Логин уже существует"))
+            continue
+            
+        # Check if email exists
+        user_by_email = db.query(User).filter(User.email == user_data.email).first()
+        if user_by_email:
+            failed += 1
+            details.append(UserBatchItemResult(username=user_data.username, success=False, error="Почта уже существует"))
+            continue
+            
+        try:
+            new_user = User(
+                username=user_data.username,
+                email=user_data.email,
+                hashed_password=hash_password(user_data.password),
+                role=user_data.role,
+                class_name=user_data.class_name,
+            )
+            db.add(new_user)
+            db.commit()
+            successful += 1
+            details.append(UserBatchItemResult(username=user_data.username, success=True))
+        except Exception as e:
+            db.rollback()
+            failed += 1
+            details.append(UserBatchItemResult(username=user_data.username, success=False, error="Ошибка базы данных"))
+            
+    return UserBatchResult(successful=successful, failed=failed, details=details)
+
 
 @router.post("/", response_model=UserOut)
 def create_user_by_director(

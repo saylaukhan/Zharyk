@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Briefcase, Download, FileSpreadsheet, Printer, UserPlus } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Briefcase, Download, Upload, FileSpreadsheet, Printer, UserPlus } from 'lucide-react'
 import { Pie, Line } from 'react-chartjs-2'
 import * as XLSX from 'xlsx'
 import CreateUserModal from '../components/CreateUserModal'
@@ -14,7 +14,8 @@ import {
   fetchDirectorDashboard, 
   fetchUsersWithMetrics, 
   fetchStressDistribution, 
-  fetchOrgMetrics 
+  fetchOrgMetrics,
+  createUsersBatch
 } from '../api/api'
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Filler)
@@ -28,6 +29,7 @@ export default function DirectorDashboard() {
   const [stressDist, setStressDist] = useState(null)
   const [orgMetrics, setOrgMetrics] = useState([])
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const fileInputRef = useRef(null)
 
   const loadData = () => {
     Promise.all([
@@ -150,6 +152,50 @@ export default function DirectorDashboard() {
     window.print()
   }
 
+  const handleImportExcel = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      try {
+        const ab = evt.target.result
+        const wb = XLSX.read(ab, { type: 'array' })
+        const wsname = wb.SheetNames[0]
+        const ws = wb.Sheets[wsname]
+        const data = XLSX.utils.sheet_to_json(ws)
+        
+        const roleMap = {
+          'ученик': 'student',
+          'сотрудник': 'employee',
+          'психолог': 'psychologist',
+          'директор': 'director'
+        }
+        
+        const mappedData = data.map(row => ({
+          username: String(row['Логин'] || ''),
+          password: String(row['Пароль'] || ''),
+          role: roleMap[String(row['Роль'] || '').toLowerCase().trim()] || 'student',
+          email: String(row['Email'] || ''),
+          class_name: row['Класс'] ? String(row['Класс']) : null
+        })).filter(user => user.username && user.password && user.email)
+        
+        if (mappedData.length === 0) {
+          alert("Не найдено валидных строк для импорта (нужны колонки Логин, Пароль, Email)")
+          return
+        }
+        
+        const res = await createUsersBatch(mappedData)
+        alert(`Импорт завершен.\nУспешно: ${res.successful}\nОшибок: ${res.failed}`)
+        loadData()
+      } catch (err) {
+        console.error(err)
+        alert("Ошибка при импорте: " + (err.response?.data?.detail || err.message))
+      }
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
   return (
     <div className="bg-white text-zharyq-dark font-sans min-h-screen">
       <header className="sticky top-0 z-20 bg-white border-b border-zharyq-border print:hidden">
@@ -204,13 +250,18 @@ export default function DirectorDashboard() {
                 <UserPlus size={16} />
                 <span className="hidden sm:inline">Создать пользователя</span>
               </button>
+              <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-zharyq-border hover:bg-zharyq-bg transition-colors">
+                <Upload size={16} className="text-emerald-600" />
+                <span className="hidden sm:inline">Импорт</span>
+              </button>
+              <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleImportExcel} className="hidden" />
               <button onClick={exportToExcel} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-zharyq-border hover:bg-zharyq-bg transition-colors">
                 <FileSpreadsheet size={16} className="text-emerald-600" />
-                <span className="hidden sm:inline">Экспорт в Excel</span>
+                <span className="hidden sm:inline">Экспорт</span>
               </button>
               <button onClick={exportToPDF} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-zharyq-border hover:bg-zharyq-bg transition-colors">
                 <Printer size={16} className="text-blue-600" />
-                <span className="hidden sm:inline">PDF отчёт</span>
+                <span className="hidden sm:inline">PDF</span>
               </button>
             </div>
         </div>

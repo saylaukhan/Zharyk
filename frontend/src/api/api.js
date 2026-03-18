@@ -30,6 +30,7 @@ export const fetchAlerts = () => request('/alerts/');
 export const fetchUsersWithMetrics = (role) => request(`/users/with-metrics${role && role !== 'all' ? `?role=${role}` : ''}`);
 export const fetchUsers = () => request('/users/');
 export const createUserByDirector = (data) => request('/users/', { method: 'POST', body: JSON.stringify(data) });
+export const createUsersBatch = (data) => request('/users/batch', { method: 'POST', body: JSON.stringify(data) });
 export const fetchSessions = () => request('/sessions/');
 export const createSession = (data) => request('/sessions/', { method: 'POST', body: JSON.stringify(data) });
 export const updateSession = (id, data) => request(`/sessions/${id}`, { method: 'PUT', body: JSON.stringify(data) });
