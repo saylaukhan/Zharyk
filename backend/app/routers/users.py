@@ -4,12 +4,42 @@ from typing import List, Optional
 
 from ..database import get_db
 from ..models import User, UserMetric, TherapySession, CourseProgress, CheckIn
-from ..schemas import UserOut, StudentMetrics
+from ..schemas import UserOut, StudentMetrics, UserRegister
 from sqlalchemy import func
 from ..auth import get_current_user, require_roles
 from ..models import UserRole
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+@router.post("/", response_model=UserOut)
+def create_user_by_director(
+    user_data: UserRegister,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.director)),
+):
+    from ..auth import hash_password
+    
+    # Check if username exists
+    user_by_username = db.query(User).filter(User.username == user_data.username).first()
+    if user_by_username:
+        raise HTTPException(status_code=400, detail="Пользователь с таким логином уже существует")
+        
+    # Check if email exists
+    user_by_email = db.query(User).filter(User.email == user_data.email).first()
+    if user_by_email:
+        raise HTTPException(status_code=400, detail="Пользователь с такой почтой уже существует")
+        
+    new_user = User(
+        username=user_data.username,
+        email=user_data.email,
+        hashed_password=hash_password(user_data.password),
+        role=user_data.role,
+        class_name=user_data.class_name,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
 @router.get("/with-metrics", response_model=List[StudentMetrics])
 def get_users_with_metrics(

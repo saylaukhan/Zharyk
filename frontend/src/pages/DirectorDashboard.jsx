@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Briefcase, Download, FileSpreadsheet, Printer } from 'lucide-react'
+import { Briefcase, Download, FileSpreadsheet, Printer, UserPlus } from 'lucide-react'
 import { Pie, Line } from 'react-chartjs-2'
 import * as XLSX from 'xlsx'
+import CreateUserModal from '../components/CreateUserModal'
 import {
   Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale,
   LinearScale, PointElement, LineElement, Filler
@@ -26,8 +27,9 @@ export default function DirectorDashboard() {
   const [usersInfo, setUsersInfo] = useState([])
   const [stressDist, setStressDist] = useState(null)
   const [orgMetrics, setOrgMetrics] = useState([])
+  const [showCreateModal, setShowCreateModal] = useState(false)
 
-  useEffect(() => {
+  const loadData = () => {
     Promise.all([
       fetchDirectorDashboard(roleTab).catch(() => null),
       fetchUsersWithMetrics(roleTab).catch(() => []),
@@ -39,6 +41,10 @@ export default function DirectorDashboard() {
       if (dStress) setStressDist(dStress)
       setOrgMetrics(dOrg || [])
     })
+  }
+
+  useEffect(() => {
+    loadData()
   }, [roleTab])
 
   const chartText = isDark ? '#A1A1AA' : '#6B7280'
@@ -194,13 +200,17 @@ export default function DirectorDashboard() {
             </div>
             
             <div className="flex gap-2">
+              <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-zharyq-teal hover:bg-emerald-600 rounded-xl transition-colors shadow-sm">
+                <UserPlus size={16} />
+                <span className="hidden sm:inline">Создать пользователя</span>
+              </button>
               <button onClick={exportToExcel} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-zharyq-border hover:bg-zharyq-bg transition-colors">
                 <FileSpreadsheet size={16} className="text-emerald-600" />
-                Экспорт в Excel
+                <span className="hidden sm:inline">Экспорт в Excel</span>
               </button>
               <button onClick={exportToPDF} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-zharyq-border hover:bg-zharyq-bg transition-colors">
                 <Printer size={16} className="text-blue-600" />
-                PDF отчёт
+                <span className="hidden sm:inline">PDF отчёт</span>
               </button>
             </div>
         </div>
@@ -290,6 +300,12 @@ export default function DirectorDashboard() {
           </article>
         </section>
       </main>
+
+      <CreateUserModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={loadData}
+      />
 
       {/* Print specific styles */}
       <style dangerouslySetInnerHTML={{__html: `

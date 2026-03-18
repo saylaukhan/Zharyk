@@ -17,6 +17,7 @@ import {
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
+import PasswordChangeForm from '../components/PasswordChangeForm'
 import { fetchUserMetrics, fetchTests, fetchTestDetail, submitTest, fetchMyTestResults, updateSettings, fetchStreak } from '../api/api'
 import { getTestLevelInfo, getTestInterpretation } from '../utils/testLevels'
 
@@ -1632,6 +1633,8 @@ export default function StudentApp() {
                     </div>
                   ))}
                 </div>
+
+                <PasswordChangeForm />
 
               </div>
             </div>
