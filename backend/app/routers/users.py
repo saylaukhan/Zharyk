@@ -61,6 +61,7 @@ def get_students_with_metrics(
             "role": u.role,
             "class_name": u.class_name,
             "anonymous_id": u.anonymous_id,
+            "personalized_mode": bool(u.personalized_mode),
             "is_active": u.is_active,
             "created_at": u.created_at,
             "stress": m.stress if m else 0,

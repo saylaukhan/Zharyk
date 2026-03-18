@@ -105,6 +105,12 @@ const EMPTY_FORM = {
   questions: '',
 }
 
+// Returns display name: real username if student consented, otherwise anonymous ID
+function studentDisplayName(u) {
+  if (!u) return 'Неизвестный'
+  return u.personalized_mode ? u.username : (u.anonymous_id || `Аноним #${u.id}`)
+}
+
 export default function Psychologist() {
   const navigate = useNavigate()
   const { isDark } = useTheme()
@@ -701,7 +707,10 @@ export default function Psychologist() {
                           {unresolvedAlerts.slice(0, 6).map((a) => {
                             const meta = levelMeta(a.level)
                             const uid = a.user_id ?? a.student_id
-                            const displayName = a.anonymous_id || a.student_name || (uid ? `Студент #${uid}` : 'Неизвестный')
+                            const studentRecord = students.find(s => s.id === uid)
+                            const displayName = studentRecord
+                              ? studentDisplayName(studentRecord)
+                              : (a.anonymous_id || a.student_name || (uid ? `Студент #${uid}` : 'Неизвестный'))
                             return (
                               <div
                                 key={a.id ?? a.alert_id}
@@ -824,10 +833,11 @@ export default function Psychologist() {
                             const meta = levelMeta(a.level);
                             // Support both REST alerts (user_id/anonymous_id) and WS alerts (student_id/student_name)
                             const uid = a.user_id ?? a.student_id;
-                            const displayName = a.anonymous_id || a.student_name || (uid ? `Студент #${uid}` : 'Неизвестный');
                             const alertTypeLabel = a.alert_type || `AI Alert (${a.level})`;
-                            // Look up class from loaded students list if not directly on the alert
                             const studentRecord = students.find(s => s.id === uid);
+                            const displayName = studentRecord
+                              ? studentDisplayName(studentRecord)
+                              : (a.anonymous_id || a.student_name || (uid ? `Студент #${uid}` : 'Неизвестный'));
                             const className = a.class_name || studentRecord?.class_name || '-';
                             return (
                               <tr key={a.id ?? a.alert_id ?? i} className="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
@@ -879,7 +889,7 @@ export default function Psychologist() {
                           <div className="flex items-center gap-3 mb-4">
                             <div className={`w-9 h-9 rounded-full bg-gradient-to-tr from-zharyq-teal to-blue-400 flex items-center justify-center text-white text-xs font-bold shrink-0`}>U{u.id}</div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">{u.anonymous_id || `Аноним #${u.id}`}</p>
+                              <p className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">{studentDisplayName(u)}</p>
                               <p className="text-xs text-zharyq-gray">{u.class_name || 'Нет класса'} · {u.last_checkin_date ? timeAgo(u.last_checkin_date) : 'Нет чекинов'}</p>
                             </div>
                             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${stat.class}`} style={stat.style}>{stat.label}</span>
@@ -1208,7 +1218,7 @@ export default function Psychologist() {
               <div className="flex items-center gap-3 mb-5 pb-5 border-b border-zharyq-border">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-orange-300 to-red-400 flex items-center justify-center text-white text-sm font-bold">U{selectedUser.id}</div>
                 <div>
-                  <p className="font-semibold">{selectedUser.anonymous_id || `Аноним #${selectedUser.id}`}</p>
+                  <p className="font-semibold">{studentDisplayName(selectedUser)}</p>
                   <p className="text-xs text-zharyq-gray">{selectedUser.class_name} · Последний чек-ин: {selectedUser.last_checkin_date ? timeAgo(selectedUser.last_checkin_date) : 'никогда'}</p>
                 </div>
                 <span className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${studentStatus(selectedUser.stress).class}`} style={studentStatus(selectedUser.stress).style}>{studentStatus(selectedUser.stress).label}</span>
@@ -1408,7 +1418,7 @@ export default function Psychologist() {
               <div>
                 <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Учащийся</label>
                 {sessionModalMode === 'view' ? (
-                  <p className="text-sm font-medium py-2">{selectedSession?.student_name || students.find(s => s.id === sessionForm.user_id)?.anonymous_id || `Студент #${sessionForm.user_id}`}</p>
+                  <p className="text-sm font-medium py-2">{studentDisplayName(students.find(s => s.id === sessionForm.user_id)) || selectedSession?.student_name || `Студент #${sessionForm.user_id}`}</p>
                 ) : (
                   <select
                     value={sessionForm.user_id}
@@ -1417,7 +1427,7 @@ export default function Psychologist() {
                   >
                     <option value="">Выберите учащегося...</option>
                     {students.map(s => (
-                      <option key={s.id} value={s.id}>{s.anonymous_id || `Аноним #${s.id}`} — {s.class_name || 'Нет класса'}</option>
+                      <option key={s.id} value={s.id}>{studentDisplayName(s)} — {s.class_name || 'Нет класса'}</option>
                     ))}
                   </select>
                 )}

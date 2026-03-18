@@ -50,6 +50,22 @@ def me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+class UserSettings(BaseModel):
+    personalized_mode: bool
+
+
+@router.patch("/me/settings", response_model=UserOut)
+def update_settings(
+    payload: UserSettings,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    current_user.personalized_mode = payload.personalized_mode
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str

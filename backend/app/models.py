@@ -46,6 +46,7 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.student, nullable=False)
     anonymous_id = Column(String, unique=True, index=True, nullable=True)
     class_name = Column(String, nullable=True)
+    personalized_mode = Column(Boolean, nullable=True, default=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

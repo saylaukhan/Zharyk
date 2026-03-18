@@ -2,13 +2,55 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
+from datetime import date, timedelta
 
 from ..database import get_db
-from ..models import OrgMetric, UserMetric, CheckIn, User, Alert, RiskLevel, UserRole
+from ..models import OrgMetric, UserMetric, CheckIn, User, Alert, RiskLevel, UserRole, TestResult
 from ..schemas import OrgMetricCreate, OrgMetricOut, UserMetricOut
-from ..auth import require_roles
+from ..auth import require_roles, get_current_user
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
+
+
+@router.get("/streak")
+def get_streak(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Collect unique activity dates from checkins, user metrics (AI chat), and test results
+    checkin_dates = db.query(func.date(CheckIn.created_at)).filter(
+        CheckIn.user_id == current_user.id
+    ).all()
+    metric_dates = db.query(func.date(UserMetric.recorded_at)).filter(
+        UserMetric.user_id == current_user.id
+    ).all()
+    test_dates = db.query(func.date(TestResult.created_at)).filter(
+        TestResult.user_id == current_user.id
+    ).all()
+
+    active_dates: set[date] = set()
+    for (d,) in checkin_dates + metric_dates + test_dates:
+        if d:
+            active_dates.add(d if isinstance(d, date) else date.fromisoformat(str(d)))
+
+    today = date.today()
+
+    # Calculate current streak (consecutive days ending today or yesterday)
+    streak = 0
+    cursor = today if today in active_dates else today - timedelta(days=1)
+    while cursor in active_dates:
+        streak += 1
+        cursor -= timedelta(days=1)
+
+    # Build week_days: 7 booleans Mon–Sun for the current week
+    week_start = today - timedelta(days=today.weekday())
+    week_days = [(week_start + timedelta(days=i)) in active_dates for i in range(7)]
+
+    return {
+        "streak": streak,
+        "today_active": today in active_dates,
+        "week_days": week_days,
+    }
 
 
 @router.get("/org", response_model=List[OrgMetricOut])
