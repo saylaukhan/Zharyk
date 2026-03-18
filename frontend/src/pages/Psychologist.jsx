@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Search, AlertTriangle, Activity, CheckCircle, X, Plus,
   ClipboardList, Clock, Layers, Zap, Brain, BatteryLow, 
@@ -114,9 +114,17 @@ function studentDisplayName(u) {
 
 export default function Psychologist() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { isDark } = useTheme()
   const { user: authUser, logout } = useAuth()
-  const [view, setView] = useState('alerts')
+  
+  const initialView = searchParams.get('tab') || 'alerts'
+  const [view, setView] = useState(initialView)
+
+  // Sync active view with URL preserving other query params if any
+  useEffect(() => {
+    setSearchParams({ tab: view }, { replace: true })
+  }, [view, setSearchParams])
   const [profileOpen, setProfileOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
 

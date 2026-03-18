@@ -973,7 +973,7 @@ export default function CourseBuilder() {
         style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)' }}
       >
         <button
-          onClick={() => navigate('/psychologist')}
+          onClick={() => navigate('/psychologist?tab=courses')}
           className="flex items-center gap-1.5 text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors rounded-lg px-2 py-1.5 hover:bg-gray-100"
         >
           <ArrowLeft size={15} strokeWidth={1.5} />

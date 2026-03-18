@@ -39,12 +39,12 @@ export default function App() {
               </ProtectedRoute>
             } />
             <Route path="/course/:id" element={
-              <ProtectedRoute allowedRoles={['student', 'employee']}>
+              <ProtectedRoute allowedRoles={['student', 'employee', 'psychologist', 'director']}>
                 <CoursePass />
               </ProtectedRoute>
             } />
             <Route path="/course" element={
-              <ProtectedRoute allowedRoles={['student', 'employee']}>
+              <ProtectedRoute allowedRoles={['student', 'employee', 'psychologist', 'director']}>
                 <CoursePass />
               </ProtectedRoute>
             } />
