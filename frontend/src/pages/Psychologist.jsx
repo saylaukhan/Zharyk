@@ -18,7 +18,7 @@ import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import {
-  fetchAlertsRich, fetchStudentsWithMetrics, fetchSessions, fetchNotes, fetchUserTestResults, fetchTests,
+  fetchAlertsRich, fetchUsersWithMetrics, fetchSessions, fetchNotes, fetchUserTestResults, fetchTests,
   createSession, updateSession, deleteSession,
   createNote, updateNote, deleteNote,
   resolveAlert
@@ -166,7 +166,7 @@ export default function Psychologist() {
   }, [])
 
   const refreshStudents = () => {
-    fetchStudentsWithMetrics().then(setStudents).catch(() => {})
+    fetchUsersWithMetrics('student').then(setStudents).catch(() => {})
   }
 
   // Notes modal state
@@ -183,7 +183,7 @@ export default function Psychologist() {
   useEffect(() => {
     Promise.all([
       fetchAlertsRich().catch(() => []),
-      fetchStudentsWithMetrics().catch(() => []),
+      fetchUsersWithMetrics('student').catch(() => []),
       fetchSessions().catch(() => []),
       fetchNotes().catch(() => [])
     ]).then(([alertsData, studentsData, sessionsData, notesData]) => {

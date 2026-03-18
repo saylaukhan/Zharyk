@@ -26,7 +26,7 @@ export const fetchMe = () => request('/auth/me');
 export const updateSettings = (data) => request('/auth/me/settings', { method: 'PATCH', body: JSON.stringify(data) });
 export const fetchAlertsRich = () => request('/alerts/rich');
 export const fetchAlerts = () => request('/alerts/');
-export const fetchStudentsWithMetrics = () => request('/users/students');
+export const fetchUsersWithMetrics = (role) => request(`/users/with-metrics${role && role !== 'all' ? `?role=${role}` : ''}`);
 export const fetchUsers = () => request('/users/');
 export const fetchSessions = () => request('/sessions/');
 export const createSession = (data) => request('/sessions/', { method: 'POST', body: JSON.stringify(data) });
@@ -67,8 +67,8 @@ export const updateNote = (id, formData) => {
 export const deleteNote = (id) => request(`/notes/${id}`, { method: 'DELETE' });
 export const fetchOrgMetrics = () => request('/analytics/org');
 export const fetchSummary = () => request('/analytics/summary');
-export const fetchStressDistribution = () => request('/analytics/stress-distribution');
-export const fetchDirectorDashboard = () => request('/analytics/director-dashboard');
+export const fetchStressDistribution = (role) => request(`/analytics/stress-distribution${role && role !== 'all' ? `?role=${role}` : ''}`);
+export const fetchDirectorDashboard = (role) => request(`/analytics/director-dashboard${role && role !== 'all' ? `?role=${role}` : ''}`);
 export const fetchUserCheckins = (userId) => request(`/checkins/${userId}`); // Need to verify if it's /checkins/user/${userId} or something else. I'll use a generic one or assume /checkins/user/:user_id
 export const fetchUserMetrics = (userId) => request(`/analytics/user/${userId}`);
 export const fetchStreak = () => request('/analytics/streak');

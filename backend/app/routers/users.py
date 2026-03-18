@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from ..database import get_db
 from ..models import User, UserMetric, TherapySession, CourseProgress, CheckIn
@@ -11,14 +11,14 @@ from ..models import UserRole
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-
-@router.get("/students", response_model=List[StudentMetrics])
-def get_students_with_metrics(
+@router.get("/with-metrics", response_model=List[StudentMetrics])
+def get_users_with_metrics(
+    role: Optional[UserRole] = None,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.psychologist, UserRole.director))
 ):
-    # Get students with session/course counts and last checkin
-    students_query = (
+    # Get users with session/course counts and last checkin
+    base_query = (
         db.query(
             User,
             func.count(func.distinct(TherapySession.id)).label("sessions_count"),
@@ -28,19 +28,21 @@ def get_students_with_metrics(
         .outerjoin(TherapySession, User.id == TherapySession.user_id)
         .outerjoin(CourseProgress, User.id == CourseProgress.user_id)
         .outerjoin(CheckIn, User.id == CheckIn.user_id)
-        .filter(User.role == UserRole.student)
-        .group_by(User.id)
-        .all()
     )
+    
+    if role:
+        base_query = base_query.filter(User.role == role)
+        
+    users_query = base_query.group_by(User.id).all()
 
-    if not students_query:
+    if not users_query:
         return []
 
-    # Fetch the latest metric per student (latest by id = most recent record)
-    student_ids = [u.id for u, _, _, _ in students_query]
+    # Fetch the latest metric per user (latest by id = most recent record)
+    user_ids = [u.id for u, _, _, _ in users_query]
     latest_ids_sq = (
         db.query(func.max(UserMetric.id).label("mid"))
-        .filter(UserMetric.user_id.in_(student_ids))
+        .filter(UserMetric.user_id.in_(user_ids))
         .group_by(UserMetric.user_id)
         .subquery()
     )
@@ -52,7 +54,7 @@ def get_students_with_metrics(
     metrics_map = {m.user_id: m for m in metrics_list}
 
     res = []
-    for u, s_count, c_count, last_check in students_query:
+    for u, s_count, c_count, last_check in users_query:
         m = metrics_map.get(u.id)
         res.append({
             "id": u.id,

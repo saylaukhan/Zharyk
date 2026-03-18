@@ -799,6 +799,9 @@ export default function StudentApp() {
             <span className="font-semibold">Zharyq</span>
           </div>
           <div className="flex items-center gap-3">
+            <button onClick={() => setView('about')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title="О платформе">
+              <Info size={20} />
+            </button>
             <button className="relative text-zharyq-gray"><Bell size={20} /><span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" /></button>
             <div className="bg-zharyq-teal-light border border-teal-200 text-zharyq-teal text-xs font-medium px-3 py-1 rounded-full flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-zharyq-teal" />В норме
@@ -1801,7 +1804,6 @@ export default function StudentApp() {
           { id: 'tests', icon: ClipboardList, label: 'Тесты' },
           { id: 'analytics', icon: BarChart2, label: 'Аналитика' },
           { id: 'courses', icon: BookOpen, label: 'Курсы' },
-          { id: 'about', icon: Info, label: 'Инфо' },
         ].map(item => (
           <button key={item.id} onClick={() => setView(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${view === item.id ? 'text-zharyq-orange' : 'text-zharyq-gray'}`}>
             <item.icon size={20} />
