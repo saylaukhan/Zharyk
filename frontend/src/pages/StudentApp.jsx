@@ -770,14 +770,16 @@ export default function StudentApp() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
-                <p className="text-sm font-medium text-zharyq-dark truncate">{authUser?.username || 'Студент'}</p>
+                <p className="text-sm font-medium text-zharyq-dark truncate">{authUser?.username || (authUser?.role === 'employee' ? 'Сотрудник' : 'Студент')}</p>
                 {streakData.streak > 0 && (
                   <span className="bg-orange-100 text-zharyq-orange text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-orange-200 shrink-0">🔥 {streakData.streak}</span>
                 )}
               </div>
-              <p className="text-[10px] text-zharyq-gray truncate flex items-center gap-1">
-                <GraduationCap size={12} /> {authUser?.class_name || 'Не указан'}
-              </p>
+              {authUser?.role !== 'employee' && (
+                <p className="text-[10px] text-zharyq-gray truncate flex items-center gap-1">
+                  <GraduationCap size={12} /> {authUser?.class_name || 'Не указан'}
+                </p>
+              )}
             </div>
           </button>
           <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors shrink-0" title="Выйти">
@@ -818,7 +820,7 @@ export default function StudentApp() {
                       <Sparkles size={22} className="text-white" />
                     </div>
                     {(() => { const g = getDynamicGreeting(metrics, testHistory); return <>
-                    <h2 className="text-2xl font-semibold mb-2">{g.timeGreeting}, {authUser?.username || 'Студент'}</h2>
+                    <h2 className="text-2xl font-semibold mb-2">{g.timeGreeting}, {authUser?.username || (authUser?.role === 'employee' ? 'Сотрудник' : 'Студент')}</h2>
                     <p className={`mb-8 text-sm ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{g.subtitle}</p>
                     </> })()}
                     <div className="flex flex-wrap justify-center gap-2">
@@ -1036,7 +1038,7 @@ export default function StudentApp() {
                           {getTestLevelInfo(activeTest.slug, testResult.overall_level).label}
                         </span>
                       </div>
-                      {[
+                      {activeTest?.slug === 'hardiness-maddi' && [
                         { label: 'Вовлечённость', score: testResult.involvement_score, level: testResult.involvement_level, icon: Target },
                         { label: 'Контроль', score: testResult.control_score, level: testResult.control_level, icon: Shield },
                         { label: 'Принятие риска', score: testResult.risk_score, level: testResult.risk_level, icon: Zap },
@@ -1046,8 +1048,8 @@ export default function StudentApp() {
                             <s.icon size={10} /> {s.label}
                           </p>
                           <p className="text-2xl font-bold text-zharyq-dark">{s.score}</p>
-                          <span className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full border mt-1 ${LEVEL_STYLES[s.level] || ''}`}>
-                            {LEVEL_LABELS[s.level] || s.level}
+                          <span className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full border mt-1 ${getTestLevelInfo('hardiness-maddi', s.level).style}`}>
+                            {getTestLevelInfo('hardiness-maddi', s.level).label}
                           </span>
                         </div>
                       ))}
@@ -1485,13 +1487,15 @@ export default function StudentApp() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h2 className={`text-2xl font-semibold mb-0.5 ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>
-                        {authUser?.username || 'Студент'}
+                        {authUser?.username || (authUser?.role === 'employee' ? 'Сотрудник' : 'Студент')}
                       </h2>
-                      <p className={`text-sm mb-2.5 ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>
-                        {authUser?.class_name || 'Класс не указан'}
-                      </p>
+                      {authUser?.role !== 'employee' && (
+                        <p className={`text-sm mb-2.5 ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>
+                          {authUser?.class_name || 'Класс не указан'}
+                        </p>
+                      )}
                       <span className={`inline-flex items-center text-xs font-medium px-3 py-0.5 rounded-full border ${isDark ? 'border-[#2DD4BF] text-[#2DD4BF]' : 'border-[#14B8A6] text-[#14B8A6]'}`}>
-                        Студент
+                        {authUser?.role === 'employee' ? 'Сотрудник' : 'Студент'}
                       </span>
                     </div>
                   </div>
