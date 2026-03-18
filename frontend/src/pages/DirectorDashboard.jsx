@@ -127,25 +127,29 @@ export default function DirectorDashboard() {
   }
 
   const exportToExcel = () => {
-    const dataToExport = usersInfo.map(u => ({
-      'ID пользователя': u.anonymous_id || `User #${u.id}`,
-      'Логин': u.username,
-      'Email': u.email,
-      'Роль': getRoleLabel(u.role),
-      'Детали (Класс)': u.class_name || '-',
-      'Уровень стресса (0-100)': u.stress,
-      'Мотивация': u.motivation,
-      'Бернаут': u.burnout,
-      'Тревожность': u.anxiety,
-      'Пройдено курсов': u.courses_count,
-      'Сессий проведено': u.sessions_count,
-      'Последний чек-ин': u.last_checkin_date ? new Date(u.last_checkin_date).toLocaleString('ru-RU') : 'Нет чекинов',
-    }))
-    
-    const ws = XLSX.utils.json_to_sheet(dataToExport)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Статистика")
-    XLSX.writeFile(wb, `Zharyq_Analytics_${roleTab}_${new Date().toLocaleDateString('ru-RU')}.xlsx`)
+    const headers = ['ID пользователя','Логин','Email','Роль','Детали (Класс)','Уровень стресса (0-100)','Мотивация','Бернаут','Тревожность','Пройдено курсов','Сессий проведено','Последний чек-ин']
+    const rows = usersInfo.map(u => [
+      u.anonymous_id || `User #${u.id}`,
+      u.username,
+      u.email,
+      getRoleLabel(u.role),
+      u.class_name || '-',
+      u.stress,
+      u.motivation,
+      u.burnout,
+      u.anxiety,
+      u.courses_count,
+      u.sessions_count,
+      u.last_checkin_date ? new Date(u.last_checkin_date).toLocaleString('ru-RU') : 'Нет чекинов',
+    ])
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Zharyq_Analytics_${roleTab}_${new Date().toLocaleDateString('ru-RU')}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const exportToPDF = () => {
