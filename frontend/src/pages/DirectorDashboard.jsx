@@ -8,12 +8,14 @@ import {
   LinearScale, PointElement, LineElement, Filler
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
-import { 
-  fetchDirectorDashboard, 
-  fetchUsersWithMetrics, 
-  fetchStressDistribution, 
+import { useTranslation } from 'react-i18next'
+import {
+  fetchDirectorDashboard,
+  fetchUsersWithMetrics,
+  fetchStressDistribution,
   fetchOrgMetrics,
   createUsersBatch
 } from '../api/api'
@@ -21,6 +23,7 @@ import {
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Filler)
 
 export default function DirectorDashboard() {
+  const { t } = useTranslation()
   const { isDark } = useTheme()
   const { logout } = useAuth()
   const [roleTab, setRoleTab] = useState('all')
@@ -54,13 +57,13 @@ export default function DirectorDashboard() {
   const surfaceColor = isDark ? '#27272A' : '#F9FAFB'
 
   const KPI_CARDS = [
-    { label: 'Общий индекс благополучия', value: dashboard ? `${dashboard.wellbeing_index}%` : '...', delta: 'По выбранной группе', deltaClass: 'text-emerald-600' },
-    { label: 'Алертов (Крит / Сред)', value: dashboard ? `${dashboard.critical_alerts} / ${dashboard.medium_alerts}` : '...', delta: 'Требуют внимания', deltaClass: 'text-red-600' },
-    { label: 'Уровень вовлеченности', value: dashboard ? `${dashboard.engagement_rate}%` : '...', delta: 'В учебный процесс', deltaClass: 'text-zharyq-teal', span: 'sm:col-span-2 xl:col-span-1' },
+    { label: t('director.wellbeingIndex'), value: dashboard ? `${dashboard.wellbeing_index}%` : '...', delta: t('director.byGroup'), deltaClass: 'text-emerald-600' },
+    { label: t('director.alerts'), value: dashboard ? `${dashboard.critical_alerts} / ${dashboard.medium_alerts}` : '...', delta: t('director.requireAttention'), deltaClass: 'text-red-600' },
+    { label: t('director.engagementLevel'), value: dashboard ? `${dashboard.engagement_rate}%` : '...', delta: t('director.inLearning'), deltaClass: 'text-zharyq-teal', span: 'sm:col-span-2 xl:col-span-1' },
   ]
 
   const pieData = {
-    labels: ['Низкий', 'Умеренный', 'Высокий', 'Критический'],
+    labels: [t('director.pielow'), t('director.pieModerate'), t('director.pieHigh'), t('director.pieCritical')],
     datasets: [{
       data: stressDist ? [stressDist.low, stressDist.medium, stressDist.high, stressDist.critical] : [0,0,0,0],
       backgroundColor: ['#14B8A6', '#60A5FA', '#F59E0B', '#EF4444'],
@@ -82,9 +85,9 @@ export default function DirectorDashboard() {
 
   const sortedOrg = [...orgMetrics].reverse()
   const lineData = {
-    labels: sortedOrg.length ? sortedOrg.map(m => new Date(m.recorded_at).toLocaleDateString('ru-RU', {month:'short', day:'numeric'})) : ['Нет данных'],
+    labels: sortedOrg.length ? sortedOrg.map(m => new Date(m.recorded_at).toLocaleDateString('ru-RU', {month:'short', day:'numeric'})) : [t('director.noData')],
     datasets: [{
-      label: 'Индекс благополучия (Организация)',
+      label: t('director.wellbeingChart'),
       data: sortedOrg.length ? sortedOrg.map(m => m.wellbeing_index) : [0],
       borderColor: '#FF7100',
       backgroundColor: 'rgba(255, 113, 0, 0.12)',
@@ -110,24 +113,37 @@ export default function DirectorDashboard() {
   }
 
   const getRiskProps = (stress) => {
-    if (stress >= 80) return { label: 'Критический', cls: 'bg-red-50 text-red-600 border-red-200' };
-    if (stress >= 60) return { label: 'Высокий', cls: 'bg-orange-50 text-orange-600 border-orange-200' };
-    if (stress >= 40) return { label: 'Средний', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
-    return { label: 'Низкий', cls: 'bg-green-50 text-green-700 border-green-200' };
+    if (stress >= 80) return { label: t('director.riskCritical'), cls: 'bg-red-50 text-red-600 border-red-200' };
+    if (stress >= 60) return { label: t('director.riskHigh'), cls: 'bg-orange-50 text-orange-600 border-orange-200' };
+    if (stress >= 40) return { label: t('director.riskMedium'), cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+    return { label: t('director.riskLow'), cls: 'bg-green-50 text-green-700 border-green-200' };
   }
 
   const getRoleLabel = (r) => {
     switch(r) {
-      case 'student': return 'Ученик';
-      case 'employee': return 'Сотрудник';
-      case 'psychologist': return 'Психолог';
-      case 'director': return 'Директор';
+      case 'student': return t('director.roleStudent');
+      case 'employee': return t('director.roleEmployee');
+      case 'psychologist': return t('director.rolePsychologist');
+      case 'director': return t('director.roleDirector');
       default: return r;
     }
   }
 
   const exportToExcel = () => {
-    const headers = ['ID пользователя','Логин','Email','Роль','Детали (Класс)','Уровень стресса (0-100)','Мотивация','Бернаут','Тревожность','Пройдено курсов','Сессий проведено','Последний чек-ин']
+    const headers = [
+      t('director.exportHeaders.userId'),
+      t('director.exportHeaders.login'),
+      t('director.exportHeaders.email'),
+      t('director.exportHeaders.role'),
+      t('director.exportHeaders.details'),
+      t('director.exportHeaders.stress'),
+      t('director.exportHeaders.motivation'),
+      t('director.exportHeaders.burnout'),
+      t('director.exportHeaders.anxiety'),
+      t('director.exportHeaders.courses'),
+      t('director.exportHeaders.sessions'),
+      t('director.exportHeaders.lastCheckin'),
+    ]
     const rows = usersInfo.map(u => [
       u.anonymous_id || `User #${u.id}`,
       u.username,
@@ -140,7 +156,7 @@ export default function DirectorDashboard() {
       u.anxiety,
       u.courses_count,
       u.sessions_count,
-      u.last_checkin_date ? new Date(u.last_checkin_date).toLocaleString('ru-RU') : 'Нет чекинов',
+      u.last_checkin_date ? new Date(u.last_checkin_date).toLocaleString('ru-RU') : t('director.noCheckins'),
     ])
     const csv = [headers, ...rows].map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
@@ -184,16 +200,16 @@ export default function DirectorDashboard() {
         })).filter(user => user.username && user.password && user.email)
         
         if (mappedData.length === 0) {
-          alert("Не найдено валидных строк для импорта (нужны колонки Логин, Пароль, Email)")
+          alert(t('director.importNoValidRows'))
           return
         }
-        
+
         const res = await createUsersBatch(mappedData)
-        alert(`Импорт завершен.\nУспешно: ${res.successful}\nОшибок: ${res.failed}`)
+        alert(t('director.importCompleted', { successful: res.successful, failed: res.failed }))
         loadData()
       } catch (err) {
         console.error(err)
-        alert("Ошибка при импорте: " + (err.response?.data?.detail || err.message))
+        alert(t('director.importError', { error: err.response?.data?.detail || err.message }))
       }
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
@@ -210,7 +226,7 @@ export default function DirectorDashboard() {
             </div>
             <div className="min-w-0">
               <p className="text-[11px] uppercase tracking-[0.22em] text-zharyq-gray font-semibold">Zharyq Analytics</p>
-              <h1 className="text-xl font-semibold truncate">Панель администратора</h1>
+              <h1 className="text-xl font-semibold truncate">{t('director.adminPanel')}</h1>
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
@@ -218,12 +234,13 @@ export default function DirectorDashboard() {
               <span className="w-2 h-2 rounded-full bg-zharyq-teal" />
               Live
             </span>
+            <LanguageSwitcher />
             <ThemeToggle />
             <button
               onClick={logout}
               className="text-sm font-medium px-4 py-2 rounded-xl text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-colors"
             >
-              Выйти
+              {t('nav.logout')}
             </button>
           </div>
         </div>
@@ -234,10 +251,10 @@ export default function DirectorDashboard() {
         <div className="flex flex-wrap items-center justify-between gap-4 print:hidden">
             <div className="flex gap-2 p-1 bg-zharyq-bg rounded-xl border border-zharyq-border overflow-x-auto">
               {[
-                { id: 'all', label: 'Все группы' },
-                { id: 'student', label: 'Ученики' },
-                { id: 'employee', label: 'Сотрудники' },
-                { id: 'psychologist', label: 'Психологи' }
+                { id: 'all', label: t('director.allGroups') },
+                { id: 'student', label: t('director.students') },
+                { id: 'employee', label: t('director.employees') },
+                { id: 'psychologist', label: t('director.psychologists') }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -252,20 +269,20 @@ export default function DirectorDashboard() {
             <div className="flex gap-2">
               <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-zharyq-teal hover:bg-emerald-600 rounded-xl transition-colors shadow-sm">
                 <UserPlus size={16} />
-                <span className="hidden sm:inline">Создать пользователя</span>
+                <span className="hidden sm:inline">{t('director.createUser')}</span>
               </button>
               <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-zharyq-border hover:bg-zharyq-bg transition-colors">
                 <Upload size={16} className="text-emerald-600" />
-                <span className="hidden sm:inline">Импорт</span>
+                <span className="hidden sm:inline">{t('director.import')}</span>
               </button>
               <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleImportExcel} className="hidden" />
               <button onClick={exportToExcel} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-zharyq-border hover:bg-zharyq-bg transition-colors">
                 <FileSpreadsheet size={16} className="text-emerald-600" />
-                <span className="hidden sm:inline">Экспорт</span>
+                <span className="hidden sm:inline">{t('director.export')}</span>
               </button>
               <button onClick={exportToPDF} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-zharyq-border hover:bg-zharyq-bg transition-colors">
                 <Printer size={16} className="text-blue-600" />
-                <span className="hidden sm:inline">PDF</span>
+                <span className="hidden sm:inline">{t('director.pdf')}</span>
               </button>
             </div>
         </div>
@@ -284,13 +301,13 @@ export default function DirectorDashboard() {
 
         <section className="grid grid-cols-1 xl:grid-cols-3 gap-4 print:break-inside-avoid">
           <article className="rounded-2xl border border-zharyq-border bg-zharyq-bg p-5 xl:col-span-1">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray mb-4">Уровни стресса</h2>
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray mb-4">{t('director.stressLevels')}</h2>
             <div style={{ height: '280px' }} className="flex items-center justify-center">
               <Pie data={pieData} options={pieOptions} />
             </div>
           </article>
           <article className="rounded-2xl border border-zharyq-border bg-zharyq-bg p-5 xl:col-span-2">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray mb-4">Эмоциональный фон (Организация)</h2>
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray mb-4">{t('director.emotionalBg')}</h2>
             <div style={{ height: '280px' }}>
               <Line data={lineData} options={lineOptions} />
             </div>
@@ -301,18 +318,18 @@ export default function DirectorDashboard() {
           <article className="rounded-2xl border border-zharyq-border bg-zharyq-bg p-5">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <div>
-                <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray">Подробная статистика пользователей</h2>
-                <p className="text-sm text-zharyq-gray mt-1">Всего пользователей в выборке: {usersInfo.length}</p>
+                <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray">{t('director.detailedStats')}</h2>
+                <p className="text-sm text-zharyq-gray mt-1">{t('director.totalUsersInSample')} {usersInfo.length}</p>
               </div>
               <div className="flex flex-wrap gap-2 print:hidden">
-                 <span className="text-xs text-zharyq-gray px-3 py-1 bg-white border border-zharyq-border rounded-lg">Данные обновлены сегодня</span>
+                 <span className="text-xs text-zharyq-gray px-3 py-1 bg-white border border-zharyq-border rounded-lg">{t('director.dataUpdatedToday')}</span>
               </div>
             </div>
             <div className="overflow-x-auto rounded-xl border border-zharyq-border">
               <table className="w-full min-w-[800px] text-sm">
                 <thead className="bg-white border-b border-zharyq-border">
                   <tr>
-                    {['Идентификатор', 'Роль/Детали', 'Риск', 'Курсов', 'Сессий', 'Последний чек-ин'].map(h => (
+                    {[t('director.colId'), t('director.colRoleDetails'), t('director.colRisk'), t('director.colCourses'), t('director.colSessions'), t('director.colLastCheckin')].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-zharyq-gray">{h}</th>
                     ))}
                   </tr>
@@ -320,7 +337,7 @@ export default function DirectorDashboard() {
                 <tbody className="bg-white">
                   {usersInfo.map((u, i) => {
                     const risk = getRiskProps(u.stress || 0);
-                    const d = u.last_checkin_date ? new Date(u.last_checkin_date).toLocaleString('ru-RU') : 'Нет чекинов';
+                    const d = u.last_checkin_date ? new Date(u.last_checkin_date).toLocaleString('ru-RU') : t('director.noCheckins');
                     return (
                       <tr key={u.id} className={`${i < usersInfo.length - 1 ? 'border-b border-zharyq-border' : ''} hover:bg-zharyq-bg transition-colors`}>
                         <td className="px-4 py-3 font-medium">
@@ -346,7 +363,7 @@ export default function DirectorDashboard() {
                   })}
                   {usersInfo.length === 0 && (
                       <tr>
-                          <td colSpan="6" className="px-4 py-8 text-center text-zharyq-gray">Нет данных для отображения</td>
+                          <td colSpan="6" className="px-4 py-8 text-center text-zharyq-gray">{t('director.noDataToDisplay')}</td>
                       </tr>
                   )}
                 </tbody>

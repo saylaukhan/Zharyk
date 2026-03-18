@@ -2,10 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Check, Lock, ChevronRight, Loader2, Sparkles, Wind } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from '../components/LanguageSwitcher';
+import ThemeToggle from '../components/ThemeToggle';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 export default function CoursePass() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { id } = useParams();
   const { user } = useAuth();
@@ -89,7 +93,7 @@ export default function CoursePass() {
       setCurrentModuleIndex(currentModuleIndex + 1);
     } else {
       // Course finished! Add fireworks or navigate away
-      alert('Поздравляем! Вы завершили курс.');
+      alert(t('coursePass.congratulations'));
       navigate('/app');
     }
   };
@@ -107,8 +111,8 @@ export default function CoursePass() {
   if (!course || !currentModule) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-white dark:bg-[#18181B]">
-        <h2 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">Курс не найден</h2>
-        <button onClick={() => navigate('/app')} className="text-zharyq-orange">Вернуться</button>
+        <h2 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">{t('coursePass.courseNotFound')}</h2>
+        <button onClick={() => navigate('/app')} className="text-zharyq-orange">{t('coursePass.goBack')}</button>
       </div>
     );
   }
@@ -144,12 +148,18 @@ export default function CoursePass() {
         
         {/* Шапка сайдбара */}
         <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
-          <button 
-            onClick={() => navigate('/app')}
-            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors mb-4 text-zinc-500 dark:text-zinc-400"
-          >
-            <ArrowLeft size={20} />
-          </button>
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={() => navigate('/app')}
+              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors text-zinc-500 dark:text-zinc-400"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div className="flex items-center gap-1">
+              <LanguageSwitcher />
+              <ThemeToggle />
+            </div>
+          </div>
           
           <h2 className="font-semibold text-[14px] text-zinc-900 dark:text-white mb-3 line-clamp-2">
             {course.title}
@@ -163,7 +173,7 @@ export default function CoursePass() {
             />
           </div>
           <div className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Пройдено {progressPercent}%
+            {t('coursePass.progress', { percent: progressPercent })}
           </div>
         </div>
 
@@ -243,7 +253,7 @@ export default function CoursePass() {
                   onClick={handleNextLesson}
                   className="px-6 py-2.5 rounded-xl text-sm font-medium text-white bg-teal-500 hover:bg-teal-600 transition-colors duration-150 flex items-center gap-2"
                 >
-                  Урок пройден
+                  {t('coursePass.lessonComplete')}
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -256,7 +266,7 @@ export default function CoursePass() {
               {practice.practice_type === 'quiz' && (
                 <>
                   <h3 className="text-lg font-medium text-zinc-900 dark:text-white mb-5">
-                    Проверка знаний
+                    {t('coursePass.knowledgeCheck')}
                   </h3>
                   <p className="text-[14px] text-zinc-800 dark:text-zinc-300 mb-6">
                     {practice.quiz_question || currentModule.label}
@@ -323,7 +333,7 @@ export default function CoursePass() {
                             : "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed"
                         }`}
                       >
-                        Ответить
+                        {t('coursePass.answer')}
                       </button>
                     ) : (
                       <div className="w-full flex items-center justify-between">
@@ -331,11 +341,11 @@ export default function CoursePass() {
                           {selectedOption === practice.quiz_correct_index ? (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-[#2DD4BF] text-sm font-medium">
                               <Check size={16} />
-                              Верно
+                              {t('coursePass.correct')}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm font-medium">
-                              Неверно (Попробуйте запомнить правильный ответ)
+                              {t('coursePass.incorrect')}
                             </span>
                           )}
                         </div>
@@ -343,7 +353,7 @@ export default function CoursePass() {
                           onClick={handleNextLesson}
                           className="px-6 py-2.5 rounded-xl text-sm font-medium text-[#FF7100] dark:text-[#FF851B] bg-[#FF7100]/10 dark:bg-[#FF851B]/10 hover:bg-[#FF7100]/20 dark:hover:bg-[#FF851B]/20 transition-colors duration-150 flex items-center gap-2"
                         >
-                          Далее
+                          {t('coursePass.next')}
                           <ChevronRight size={16} />
                         </button>
                       </div>
@@ -355,18 +365,18 @@ export default function CoursePass() {
               {practice.practice_type === 'essay' && (
                 <>
                   <h3 className="text-lg font-medium text-zinc-900 dark:text-white mb-3 flex items-center gap-2">
-                    Открытый вопрос
+                    {t('coursePass.openQuestion')}
                     {practice.ai_enabled && <Sparkles size={16} className="text-[#FF7100]" />}
                   </h3>
                   <p className="text-[14px] text-zinc-800 dark:text-zinc-300 mb-6">
-                    {practice.prompt || "Дайте ответ на вопрос или выполните задание."}
+                    {practice.prompt || t('coursePass.defaultPrompt')}
                   </p>
-                  
+
                   <textarea
                     value={essayAnswer}
                     onChange={e => setEssayAnswer(e.target.value)}
                     disabled={isAnswered}
-                    placeholder="Напишите ваш ответ здесь..."
+                    placeholder={t('coursePass.essayPlaceholder')}
                     rows={6}
                     className="w-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl px-4 py-3 text-sm focus:border-[#FF7100] dark:focus:border-[#FF851B] transition-colors outline-none resize-none disabled:opacity-50"
                   />
@@ -384,14 +394,14 @@ export default function CoursePass() {
                             : "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed"
                         }`}
                       >
-                        Завершить задание
+                        {t('coursePass.completeTask')}
                       </button>
                     ) : (
                       <button
                         onClick={handleNextLesson}
                         className="px-6 py-2.5 rounded-xl text-sm font-medium text-[#FF7100] dark:text-[#FF851B] bg-[#FF7100]/10 dark:bg-[#FF851B]/10 hover:bg-[#FF7100]/20 dark:hover:bg-[#FF851B]/20 transition-colors duration-150 flex items-center gap-2"
                       >
-                        Далее
+                        {t('coursePass.next')}
                         <ChevronRight size={16} />
                       </button>
                     )}
@@ -405,17 +415,17 @@ export default function CoursePass() {
                     <Wind size={36} className="text-teal-500" />
                   </div>
                   <h3 className="text-xl font-medium text-zinc-900 dark:text-white mb-2">
-                    Дыхательная практика
+                    {t('coursePass.breathingPractice')}
                   </h3>
                   <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-8 max-w-sm mx-auto">
-                    Сделайте перерыв на {practice.breath_duration_minutes || 5} минут. Глубокий вдох, плавный выдох.
+                    {t('coursePass.breathingDesc', { minutes: practice.breath_duration_minutes || 5 })}
                   </p>
-                  
+
                   <button
                     onClick={handleNextLesson}
                     className="px-8 py-3 rounded-xl text-sm font-medium text-white bg-[#FF7100] hover:bg-[#E66600] transition-colors duration-150"
                   >
-                    Завершить практику
+                    {t('coursePass.completePractice')}
                   </button>
                 </div>
               )}

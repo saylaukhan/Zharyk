@@ -2,79 +2,68 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Search, AlertTriangle, Activity, CheckCircle, X, Plus,
-  ClipboardList, Clock, Layers, Zap, Brain, BatteryLow, 
-  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles, Pencil, Trash2, BookOpen, Eye, Edit3, Image, Upload
+  ClipboardList, Clock, Layers, Zap, Brain, BatteryLow,
+  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles, Pencil, Trash2, BookOpen, Eye, Edit3, Image, Upload, BarChart2
 } from 'lucide-react'
-import { Radar } from 'react-chartjs-2'
+import { Radar, Pie, Line } from 'react-chartjs-2'
 import {
   Chart as ChartJS, RadialLinearScale, PointElement, LineElement,
-  Filler, Tooltip, Legend
+  Filler, Tooltip, Legend, ArcElement, CategoryScale, LinearScale
 } from 'chart.js'
 import { Calendar as BigCalendar, dateFnsLocalizer } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import ThemeToggle from '../components/ThemeToggle'
+import LanguageSwitcher from '../components/LanguageSwitcher'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import {
   fetchAlertsRich, fetchUsersWithMetrics, fetchSessions, fetchNotes, fetchUserTestResults, fetchTests,
   createSession, updateSession, deleteSession,
   createNote, updateNote, deleteNote,
-  resolveAlert
+  resolveAlert,
+  fetchOrgMetrics
 } from '../api/api'
 import { getTestLevelInfo } from '../utils/testLevels'
 import { useAlertWebSocket } from '../hooks/useAlertWebSocket'
 import AlertBanner from '../components/AlertBanner'
 import AlertDetailModal from '../components/AlertDetailModal'
 
-ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
+ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend, ArcElement, CategoryScale, LinearScale)
 
 const locales = { 'ru': ru }
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales })
 
-const calendarMessages = {
-  allDay: 'Весь день',
-  previous: 'Назад',
-  next: 'Вперёд',
-  today: 'Сегодня',
-  month: 'Месяц',
-  week: 'Неделя',
-  day: 'День',
-  agenda: 'Список',
-  date: 'Дата',
-  time: 'Время',
-  event: 'Событие',
-  noEventsInRange: 'Нет событий в этом диапазоне.',
-  showMore: (total) => `+ ещё ${total}`,
-}
+// calendarMessages is now computed inside the component to support i18n
 
 // Helpers
-function timeAgo(dateString) {
+function timeAgo(dateString, t) {
   if (!dateString) return '';
   const diff = Date.now() - new Date(dateString).getTime();
   const minutes = Math.floor(diff / 60000);
-  if (minutes < 15) return 'Только что';
-  if (minutes < 60) return `${minutes} мин назад`;
+  if (minutes < 15) return t('psychologist.timeJustNow');
+  if (minutes < 60) return t('psychologist.timeMinutesAgo', { minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} ч назад`;
+  if (hours < 24) return t('psychologist.timeHoursAgo', { hours });
   const days = Math.floor(hours / 24);
-  return `${days} дн. назад`;
+  return t('psychologist.timeDaysAgo', { days });
 }
 
-function levelMeta(level) {
+function levelMeta(level, t) {
   switch (level) {
-    case 'critical': return { label: 'Критический', color: 'text-red-500', bg: 'bg-red-50', dot: 'bg-red-500', class: 'text-red-600 bg-red-50 border-red-100' };
-    case 'medium': return { label: 'Средний', color: 'text-amber-500', bg: 'bg-amber-50', dot: 'bg-amber-500', class: 'text-amber-600 bg-amber-50 border-amber-100' };
-    case 'high': return { label: 'Высокий', color: 'text-orange-500', bg: 'bg-orange-50', dot: 'bg-orange-500', class: 'text-orange-600 bg-orange-50 border-orange-100' };
-    default: return { label: 'Низкий', color: 'text-zharyq-teal', bg: 'bg-zharyq-teal-light', dot: 'bg-zharyq-teal', class: 'text-zharyq-teal bg-zharyq-teal-light border-teal-100' };
+    case 'critical': return { label: t('psychologist.levelCritical'), color: 'text-red-500', bg: 'bg-red-50', dot: 'bg-red-500', class: 'text-red-600 bg-red-50 border-red-100' };
+    case 'medium': return { label: t('psychologist.levelMedium'), color: 'text-amber-500', bg: 'bg-amber-50', dot: 'bg-amber-500', class: 'text-amber-600 bg-amber-50 border-amber-100' };
+    case 'high': return { label: t('psychologist.levelHigh'), color: 'text-orange-500', bg: 'bg-orange-50', dot: 'bg-orange-500', class: 'text-orange-600 bg-orange-50 border-orange-100' };
+    default: return { label: t('psychologist.levelLow'), color: 'text-zharyq-teal', bg: 'bg-zharyq-teal-light', dot: 'bg-zharyq-teal', class: 'text-zharyq-teal bg-zharyq-teal-light border-teal-100' };
   }
 }
 
-function studentStatus(stress) {
-  if (stress >= 80) return { label: 'Алерт', style: { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FEE2E2' }, class: 'bg-red-50 text-red-600 border border-red-100' };
-  if (stress >= 60) return { label: 'Риск', style: { background: '#FFFBEB', color: '#D97706', border: '1px solid #FEF3C7' }, class: 'bg-amber-50 text-amber-600 border border-amber-100' };
-  return { label: 'Норма', style: { background: 'var(--color-teal-light)', color: 'var(--color-teal)', border: '1px solid rgba(20,184,166,0.2)' }, class: '' };
+function studentStatus(stress, t) {
+  if (stress >= 80) return { label: t('psychologist.statusAlert'), style: { background: '#FEF2F2', color: '#DC2626', border: '1px solid #FEE2E2' }, class: 'bg-red-50 text-red-600 border border-red-100' };
+  if (stress >= 60) return { label: t('psychologist.statusRisk'), style: { background: '#FFFBEB', color: '#D97706', border: '1px solid #FEF3C7' }, class: 'bg-amber-50 text-amber-600 border border-amber-100' };
+  return { label: t('psychologist.statusNormal'), style: { background: 'var(--color-teal-light)', color: 'var(--color-teal)', border: '1px solid rgba(20,184,166,0.2)' }, class: '' };
 }
 
 const TESTS_LIB = [
@@ -107,15 +96,33 @@ const EMPTY_FORM = {
 }
 
 // Returns display name: real username if student consented, otherwise anonymous ID
-function studentDisplayName(u) {
-  if (!u) return 'Неизвестный'
-  return u.personalized_mode ? u.username : (u.anonymous_id || `Аноним #${u.id}`)
+function studentDisplayName(u, t) {
+  if (!u) return t ? t('psychologist.unknownUser') : '?'
+  return u.personalized_mode ? u.username : (u.anonymous_id || `${t ? t('common.anonymous') : 'Anon'} #${u.id}`)
 }
 
 export default function Psychologist() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { isDark } = useTheme()
   const { user: authUser, logout } = useAuth()
+
+  const calendarMessages = {
+    allDay: t('psychologist.calendarAllDay'),
+    previous: t('psychologist.calendarPrevious'),
+    next: t('psychologist.calendarNext'),
+    today: t('psychologist.calendarToday'),
+    month: t('psychologist.calendarMonth'),
+    week: t('psychologist.calendarWeek'),
+    day: t('psychologist.calendarDay'),
+    agenda: t('psychologist.calendarAgenda'),
+    date: t('psychologist.calendarDate'),
+    time: t('psychologist.calendarTime'),
+    event: t('psychologist.calendarEvent'),
+    noEventsInRange: t('psychologist.calendarNoEvents'),
+    showMore: (total) => t('psychologist.calendarShowMore', { count: total }),
+  }
+
   const [view, setView] = useState('alerts')
   const [profileOpen, setProfileOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
@@ -154,6 +161,9 @@ export default function Psychologist() {
   const [liveAlerts, setLiveAlerts] = useState([])
   const [notifOpen, setNotifOpen] = useState(false)
   const notifRef = useRef(null)
+
+  // Analytics state
+  const [analyticsOrg, setAnalyticsOrg] = useState([])
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -267,6 +277,12 @@ export default function Psychologist() {
     }
   }, [view, psyTests.length])
 
+  // Load org metrics for analytics line chart
+  useEffect(() => {
+    if (view !== 'analytics') return
+    fetchOrgMetrics().then(setAnalyticsOrg).catch(() => {})
+  }, [view])
+
   // Session calendar events
   const calendarEvents = useMemo(() => sessions.map(s => {
     const start = new Date(s.scheduled_at)
@@ -331,7 +347,7 @@ export default function Psychologist() {
       reloadSessions()
     } catch (e) {
       console.error(e)
-      alert('Ошибка при сохранении сессии: ' + e.message)
+      alert(t('psychologist.errorSaveSession', { error: e.message }))
     } finally {
       setSessionSaving(false)
     }
@@ -345,7 +361,7 @@ export default function Psychologist() {
       reloadSessions()
     } catch (e) {
       console.error(e)
-      alert('Ошибка при удалении сессии: ' + e.message)
+      alert(t('psychologist.errorDeleteSession', { error: e.message }))
     }
   }
 
@@ -368,12 +384,12 @@ export default function Psychologist() {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail || 'Неизвестная ошибка');
+        throw new Error(err.detail || t('psychologist.unknownError'));
       }
-      alert('Пароль успешно изменен!');
+      alert(t('psychologist.passwordChanged'));
       form.reset();
     } catch (err) {
-      alert('Ошибка при смене пароля: ' + err.message);
+      alert(t('psychologist.errorChangePassword', { error: err.message }));
     }
   }
 
@@ -444,7 +460,7 @@ export default function Psychologist() {
       reloadNotes()
     } catch (e) {
       console.error(e)
-      alert('Ошибка при сохранении заметки: ' + e.message)
+      alert(t('psychologist.errorSaveNote', { error: e.message }))
     } finally {
       setNoteSaving(false)
     }
@@ -458,28 +474,30 @@ export default function Psychologist() {
       reloadNotes()
     } catch (e) {
       console.error(e)
-      alert('Ошибка при удалении заметки: ' + e.message)
+      alert(t('psychologist.errorDeleteNote', { error: e.message }))
     }
   }
 
-  const titles = { 
-    alerts: ['Алерты', 'Учащиеся, требующие внимания'], 
-    users: ['Мои подопечные', 'Назначенные учащиеся'], 
-    sessions: ['Сессии', 'Запланированные встречи'], 
-    notes: ['Заметки', 'Клинические записи'], 
-    tests: ['Тестирование', 'Управление методиками и тестирование'],
-    courses: ['Управление курсами', 'Создание и редактирование курсов'],
-    settings: ['Настройки', 'Управление профилем']
+  const titles = {
+    alerts: [t('psychologist.titlesAlerts'), t('psychologist.titlesAlertsDesc')],
+    users: [t('psychologist.titlesUsers'), t('psychologist.titlesUsersDesc')],
+    sessions: [t('psychologist.titlesSessions'), t('psychologist.titlesSessionsDesc')],
+    notes: [t('psychologist.titlesNotes'), t('psychologist.titlesNotesDesc')],
+    tests: [t('psychologist.titlesTests'), t('psychologist.titlesTestsDesc')],
+    courses: [t('psychologist.titlesCourses'), t('psychologist.titlesCoursesDesc')],
+    analytics: [t('psychologist.titlesAnalytics'), t('psychologist.titlesAnalyticsDesc')],
+    settings: [t('psychologist.titlesSettings'), t('psychologist.titlesSettingsDesc')]
   }
 
   const navItems = [
-    { id: 'alerts', icon: Bell, label: 'Алерты', badge: alerts.filter(a => !a.is_resolved).length || null },
-    { id: 'users', icon: Users, label: 'Мои подопечные' },
-    { id: 'sessions', icon: Calendar, label: 'Сессии' },
-    { id: 'tests', icon: FileText, label: 'Тестирование' },
-    { id: 'notes', icon: ClipboardList, label: 'Заметки' },
-    { id: 'courses', icon: BookOpen, label: 'Курсы' },
-    { id: 'settings', icon: Settings, label: 'Настройки' },
+    { id: 'alerts', icon: Bell, label: t('psychologist.navAlerts'), badge: alerts.filter(a => !a.is_resolved).length || null },
+    { id: 'users', icon: Users, label: t('psychologist.navUsers') },
+    { id: 'sessions', icon: Calendar, label: t('psychologist.navSessions') },
+    { id: 'tests', icon: FileText, label: t('psychologist.navTests') },
+    { id: 'notes', icon: ClipboardList, label: t('psychologist.navNotes') },
+    { id: 'courses', icon: BookOpen, label: t('psychologist.navCourses') },
+    { id: 'analytics', icon: BarChart2, label: t('psychologist.navAnalytics') },
+    { id: 'settings', icon: Settings, label: t('psychologist.navSettings') },
   ]
 
   const fetchCourses = async () => {
@@ -588,9 +606,9 @@ export default function Psychologist() {
   const chartText = isDark ? '#A1A1AA' : '#6B7280'
 
   const radarData = selectedUser ? {
-    labels: ['Стресс', 'Выгорание', 'Тревожность', 'Мотивация', 'Эмоции'],
+    labels: [t('psychologist.categoryStress'), t('psychologist.categoryBurnout'), t('psychologist.categoryAnxiety'), t('psychologist.categoryMotivation'), t('psychologist.categoryEmotions')],
     datasets: [{
-      label: 'Профиль',
+      label: t('student.psyProfileTitle'),
       data: [selectedUser.stress || 0, selectedUser.burnout || 0, selectedUser.anxiety || 0, selectedUser.motivation || 0, selectedUser.emotion || 0],
       backgroundColor: 'rgba(239,68,68,0.15)',
       borderColor: '#EF4444',
@@ -624,14 +642,17 @@ export default function Psychologist() {
             </div>
             <span className="font-semibold text-lg tracking-tight">Zharyq</span>
           </Link>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <LanguageSwitcher />
+            <ThemeToggle />
+          </div>
         </div>
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl mb-6" style={{ background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.2)' }}>
           <ShieldCheck size={16} className="text-zharyq-teal shrink-0" />
-          <span className="text-xs font-semibold text-zharyq-teal">Роль: Психолог</span>
+          <span className="text-xs font-semibold text-zharyq-teal">{t('psychologist.rolePsychologist')}</span>
         </div>
         <div className="flex flex-col gap-1 mb-8">
-          <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">Рабочее пространство</p>
+          <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">{t('psychologist.workspace')}</p>
           {navItems.map(item => (
             <button key={item.id} onClick={() => setView(item.id)} className={`psych-nav ${view === item.id ? 'active-nav' : 'text-zharyq-gray hover:bg-gray-100'} w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors`}>
               <item.icon size={16} />
@@ -646,10 +667,10 @@ export default function Psychologist() {
             {authUser?.username?.[0]?.toUpperCase() || 'P'}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{authUser?.username || 'Психолог'}</p>
-            <p className="text-[10px] text-zharyq-gray flex items-center gap-1"><ShieldCheck size={12} /> {authUser?.class_name || 'Нет класса'}</p>
+            <p className="text-sm font-medium truncate">{authUser?.username || t('psychologist.psychologistLabel')}</p>
+            <p className="text-[10px] text-zharyq-gray flex items-center gap-1"><ShieldCheck size={12} /> {authUser?.class_name || t('psychologist.noClass')}</p>
           </div>
-          <button onClick={(e) => { e.stopPropagation(); logout(); }} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title="Выйти">
+          <button onClick={(e) => { e.stopPropagation(); logout(); }} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title={t('common.logout')}>
             <LogOut size={16} />
           </button>
         </div>
@@ -680,7 +701,7 @@ export default function Psychologist() {
                   <div className="absolute top-full right-0 mt-3 w-80 bg-white border border-zharyq-border rounded-2xl z-50 overflow-hidden">
                     {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3 border-b border-zharyq-border">
-                      <h3 className="text-sm font-semibold text-zharyq-dark">Уведомления</h3>
+                      <h3 className="text-sm font-semibold text-zharyq-dark">{t('psychologist.notifications')}</h3>
                       <div className="flex items-center gap-2">
                         {unresolvedAlerts.length > 0 && (
                           <span className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full">
@@ -699,19 +720,19 @@ export default function Psychologist() {
                         <div className="w-12 h-12 rounded-2xl bg-zharyq-teal-light flex items-center justify-center mb-3">
                           <CheckCircle size={22} className="text-zharyq-teal" />
                         </div>
-                        <p className="text-sm font-medium text-zharyq-dark mb-1">Пока всё спокойно</p>
-                        <p className="text-xs text-zharyq-gray leading-relaxed">Новые алерты появятся здесь автоматически</p>
+                        <p className="text-sm font-medium text-zharyq-dark mb-1">{t('psychologist.notifAllQuiet')}</p>
+                        <p className="text-xs text-zharyq-gray leading-relaxed">{t('psychologist.notifNewAlerts')}</p>
                       </div>
                     ) : (
                       <>
                         <div className="max-h-72 overflow-y-auto divide-y divide-zharyq-border">
                           {unresolvedAlerts.slice(0, 6).map((a) => {
-                            const meta = levelMeta(a.level)
+                            const meta = levelMeta(a.level, t)
                             const uid = a.user_id ?? a.student_id
                             const studentRecord = students.find(s => s.id === uid)
                             const displayName = studentRecord
-                              ? studentDisplayName(studentRecord)
-                              : (a.anonymous_id || a.student_name || (uid ? `Студент #${uid}` : 'Неизвестный'))
+                              ? studentDisplayName(studentRecord, t)
+                              : (a.anonymous_id || a.student_name || (uid ? `${t('psychologist.studentPrefix')}${uid}` : t('psychologist.unknownUser')))
                             return (
                               <div
                                 key={a.id ?? a.alert_id}
@@ -723,7 +744,7 @@ export default function Psychologist() {
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between gap-2 mb-0.5">
                                       <p className="text-xs font-semibold text-zharyq-dark truncate">{displayName}</p>
-                                      <span className="text-[10px] text-zharyq-gray shrink-0">{timeAgo(a.created_at)}</span>
+                                      <span className="text-[10px] text-zharyq-gray shrink-0">{timeAgo(a.created_at, t)}</span>
                                     </div>
                                     <p className="text-xs text-zharyq-gray truncate">{a.alert_type || `AI Alert (${a.level})`}</p>
                                   </div>
@@ -737,7 +758,7 @@ export default function Psychologist() {
                             onClick={() => { setView('alerts'); setNotifOpen(false) }}
                             className="w-full px-4 py-2.5 text-xs font-semibold text-zharyq-orange hover:bg-orange-50 transition-colors text-center"
                           >
-                            Открыть все алерты →
+                            {t('psychologist.openAllAlerts')}
                           </button>
                         </div>
                       </>
@@ -750,21 +771,21 @@ export default function Psychologist() {
               <>
                 <div className="relative">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
-                  <input type="text" placeholder="Поиск…" className="border border-zharyq-border rounded-xl text-zharyq-dark pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52" />
+                  <input type="text" placeholder={t('psychologist.searchPlaceholder')} className="border border-zharyq-border rounded-xl text-zharyq-dark pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52" />
                 </div>
                 <select className="border border-zharyq-border rounded-xl px-3 text-zharyq-dark py-2 text-sm bg-white focus:ring-0 cursor-pointer">
-                  <option>Все классы</option>
+                  <option>{t('psychologist.allClasses')}</option>
                 </select>
               </>
             )}
             {view === 'courses' && (
               <button onClick={() => navigate('/course-builder')} className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-xl transition-colors" style={{ background: 'var(--color-accent)' }}>
-                <Plus size={16} /> Создать курс
+                <Plus size={16} /> {t('psychologist.courseCreateNew')}
               </button>
             )}
             {view === 'notes' && (
               <button onClick={openNoteCreate} className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-xl transition-colors" style={{ background: 'var(--color-accent)' }}>
-                <Plus size={16} /> Создать заметку
+                <Plus size={16} /> {t('psychologist.noteModalCreate')}
               </button>
             )}
           </div>
@@ -795,9 +816,9 @@ export default function Psychologist() {
                     const unresolvedAlerts = alerts.filter(a => !a.is_resolved);
                     const unresolvedStudentIds = new Set(unresolvedAlerts.map(a => a.user_id ?? a.student_id).filter(Boolean));
                     const statsCards = [
-                      { icon: AlertTriangle, bg: 'bg-red-50', color: 'text-red-500', count: unresolvedAlerts.filter(a => a.level === 'critical').length, label: 'Критических' },
-                      { icon: Activity, bg: 'bg-amber-50', color: 'text-amber-500', count: unresolvedAlerts.filter(a => a.level === 'medium' || a.level === 'high').length, label: 'Средних' },
-                      { icon: CheckCircle, bg: 'bg-zharyq-teal-light', color: 'text-zharyq-teal', count: students.filter(s => !unresolvedStudentIds.has(s.id)).length, label: 'В норме' },
+                      { icon: AlertTriangle, bg: 'bg-red-50', color: 'text-red-500', count: unresolvedAlerts.filter(a => a.level === 'critical').length, label: t('psychologist.alertCountCritical') },
+                      { icon: Activity, bg: 'bg-amber-50', color: 'text-amber-500', count: unresolvedAlerts.filter(a => a.level === 'medium' || a.level === 'high').length, label: t('psychologist.alertCountMedium') },
+                      { icon: CheckCircle, bg: 'bg-zharyq-teal-light', color: 'text-zharyq-teal', count: students.filter(s => !unresolvedStudentIds.has(s.id)).length, label: t('psychologist.alertCountNormal') },
                     ];
                     return (
                   <div className="grid grid-cols-3 gap-4 mb-6">
@@ -817,28 +838,28 @@ export default function Psychologist() {
                   })()}
                   <div className="border border-zharyq-border rounded-2xl overflow-hidden text-zharyq-dark">
                     <div className="px-5 py-4 border-b border-zharyq-border flex items-center justify-between">
-                      <h2 className="text-sm font-semibold">Активные алерты</h2>
-                      <span className="text-[11px] text-zharyq-gray">Синхронизировано</span>
+                      <h2 className="text-sm font-semibold">{t('psychologist.activeAlerts')}</h2>
+                      <span className="text-[11px] text-zharyq-gray">{t('psychologist.synced')}</span>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-zharyq-border bg-zharyq-bg text-zharyq-dark">
-                            {['Пользователь', 'Класс', 'Тип алерта', 'Уровень', 'Время', 'Действие'].map(h => (
+                            {[t('psychologist.alertColUser'), t('psychologist.alertColClass'), t('psychologist.alertColType'), t('psychologist.alertColLevel'), t('psychologist.alertColTime'), t('psychologist.alertColAction')].map(h => (
                               <th key={h} className="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {alerts.filter(a => !a.is_resolved).map((a, i) => {
-                            const meta = levelMeta(a.level);
+                            const meta = levelMeta(a.level, t);
                             // Support both REST alerts (user_id/anonymous_id) and WS alerts (student_id/student_name)
                             const uid = a.user_id ?? a.student_id;
                             const alertTypeLabel = a.alert_type || `AI Alert (${a.level})`;
                             const studentRecord = students.find(s => s.id === uid);
                             const displayName = studentRecord
-                              ? studentDisplayName(studentRecord)
-                              : (a.anonymous_id || a.student_name || (uid ? `Студент #${uid}` : 'Неизвестный'));
+                              ? studentDisplayName(studentRecord, t)
+                              : (a.anonymous_id || a.student_name || (uid ? `${t('psychologist.studentPrefix')}${uid}` : t('psychologist.unknownUser')));
                             const className = a.class_name || studentRecord?.class_name || '-';
                             return (
                               <tr key={a.id ?? a.alert_id ?? i} className="border-b border-zharyq-border hover:bg-zharyq-bg transition-colors">
@@ -857,18 +878,18 @@ export default function Psychologist() {
                                     <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}
                                   </span>
                                 </td>
-                                <td className="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap" title={timeAgo(a.created_at)}>
+                                <td className="px-5 py-3.5 text-zharyq-gray text-xs whitespace-nowrap" title={timeAgo(a.created_at, t)}>
                                   {a.created_at ? new Date(a.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
                                 </td>
                                 <td className="px-5 py-3.5 flex items-center gap-3">
-                                  <button onClick={() => setSelectedAlert(a)} className="text-xs font-medium text-zharyq-orange hover:underline">Алерт</button>
-                                  {uid && <button onClick={() => openProfile(uid)} className="text-xs font-medium text-zharyq-gray hover:underline">Профиль</button>}
+                                  <button onClick={() => setSelectedAlert(a)} className="text-xs font-medium text-zharyq-orange hover:underline">{t('psychologist.alertAction')}</button>
+                                  {uid && <button onClick={() => openProfile(uid)} className="text-xs font-medium text-zharyq-gray hover:underline">{t('psychologist.profileAction')}</button>}
                                 </td>
                               </tr>
                             )
                           })}
                           {alerts.filter(a => !a.is_resolved).length === 0 && (
-                            <tr><td colSpan="6" className="text-center py-6 text-sm text-zharyq-gray">Нет активных алертов</td></tr>
+                            <tr><td colSpan="6" className="text-center py-6 text-sm text-zharyq-gray">{t('psychologist.noActiveAlerts')}</td></tr>
                           )}
                         </tbody>
                       </table>
@@ -884,27 +905,27 @@ export default function Psychologist() {
                 <div className="max-w-4xl mx-auto">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-zharyq-dark">
                     {students.map(u => {
-                      const stat = studentStatus(u.stress);
+                      const stat = studentStatus(u.stress, t);
                       return (
                         <div key={u.id} onClick={() => openProfile(u.id)} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group">
                           <div className="flex items-center gap-3 mb-4">
                             <div className={`w-9 h-9 rounded-full bg-gradient-to-tr from-zharyq-teal to-blue-400 flex items-center justify-center text-white text-xs font-bold shrink-0`}>U{u.id}</div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">{studentDisplayName(u)}</p>
-                              <p className="text-xs text-zharyq-gray">{u.class_name || 'Нет класса'} · {u.last_checkin_date ? timeAgo(u.last_checkin_date) : 'Нет чекинов'}</p>
+                              <p className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">{studentDisplayName(u, t)}</p>
+                              <p className="text-xs text-zharyq-gray">{u.class_name || t('psychologist.noClass')} · {u.last_checkin_date ? timeAgo(u.last_checkin_date, t) : t('director.noCheckins')}</p>
                             </div>
                             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${stat.class}`} style={stat.style}>{stat.label}</span>
                           </div>
                           <div className="flex flex-col gap-1.5">
                             <div className="flex items-center gap-2 text-xs">
-                              <span className="text-zharyq-gray w-16 shrink-0">Стресс</span>
+                              <span className="text-zharyq-gray w-16 shrink-0">{t('psychologist.stressLabel')}</span>
                               <div className="flex-1 bg-gray-100 rounded-full h-1">
                                 <div className="h-1 rounded-full" style={{ width: `${Math.min(100, Math.max(0, u.stress))}%`, background: u.stress > 60 ? '#F87171' : 'var(--color-accent)' }} />
                               </div>
                               <span className="text-zharyq-gray w-5 text-right">{u.stress || 0}</span>
                             </div>
                             <div className="flex items-center gap-2 text-xs">
-                              <span className="text-zharyq-gray w-16 shrink-0">Мотивация</span>
+                              <span className="text-zharyq-gray w-16 shrink-0">{t('psychologist.motivationLabel')}</span>
                               <div className="flex-1 bg-gray-100 rounded-full h-1">
                                 <div className="h-1 rounded-full" style={{ width: `${Math.min(100, Math.max(0, u.motivation))}%`, background: u.motivation < 40 ? '#FBBF24' : 'var(--color-teal)' }} />
                               </div>
@@ -912,7 +933,7 @@ export default function Psychologist() {
                             </div>
                           </div>
                           <p className="text-[11px] text-zharyq-gray mt-3 flex items-center gap-1">
-                            <span>{u.sessions_count || 0} сессий · {u.courses_count || 0} курсов</span>
+                            <span>{t('psychologist.sessionsCount', { count: u.sessions_count || 0, courses: u.courses_count || 0 })}</span>
                           </p>
                         </div>
                       )
@@ -926,13 +947,13 @@ export default function Psychologist() {
             {view === 'sessions' && (
               <div className="flex-1 overflow-hidden p-0 text-zharyq-dark animate-fade-in-up flex flex-col" style={{ height: 'calc(100vh - 73px)' }}>
                 <div className="flex items-center justify-between px-6 py-3 border-b border-zharyq-border shrink-0 bg-white">
-                  <p className="text-xs text-zharyq-gray">Нажмите на дату для создания сессии, или на событие для просмотра</p>
+                  <p className="text-xs text-zharyq-gray">{t('psychologist.sessionsClickHint')}</p>
                   <button
                     onClick={() => openSessionCreate({ start: new Date() })}
                     className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-xl transition-colors"
                     style={{ background: 'var(--color-accent)' }}
                   >
-                    <Plus size={16} /> Назначить сессию
+                    <Plus size={16} /> {t('psychologist.sessionsCreate')}
                   </button>
                 </div>
                 <div className="flex-1 px-4 pb-4 pt-2 overflow-auto zharyq-calendar">
@@ -983,34 +1004,34 @@ export default function Psychologist() {
                   <div className="flex items-center justify-between mb-6">
                     <div className="relative flex-1 max-w-md">
                       <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
-                      <input type="text" placeholder="Поиск методики..." className="w-full text-zharyq-dark border border-zharyq-border rounded-xl pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all" />
+                      <input type="text" placeholder={t('psychologist.searchTests')} className="w-full text-zharyq-dark border border-zharyq-border rounded-xl pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all" />
                     </div>
                   </div>
 
                   {psyTestsLoading ? (
-                    <div className="text-center py-16 text-zharyq-gray text-sm">Загрузка тестов...</div>
+                    <div className="text-center py-16 text-zharyq-gray text-sm">{t('psychologist.loadingTests')}</div>
                   ) : psyTests.length === 0 ? (
-                    <div className="text-center py-16 text-zharyq-gray text-sm">Нет доступных тестов в базе</div>
+                    <div className="text-center py-16 text-zharyq-gray text-sm">{t('psychologist.noTestsAvailable')}</div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {psyTests.map(t => (
-                        <div key={t.id} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group flex flex-col h-full">
+                      {psyTests.map(test => (
+                        <div key={test.id} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group flex flex-col h-full">
                           <div className="flex items-start gap-3 mb-3">
                             <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
                               <Zap size={20} className="text-zharyq-orange" />
                             </div>
                             <div>
-                              <h4 className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors leading-tight mb-1">{t.title}</h4>
-                              <p className="text-[11px] text-zharyq-gray leading-relaxed">{t.description}</p>
+                              <h4 className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors leading-tight mb-1">{test.title}</h4>
+                              <p className="text-[11px] text-zharyq-gray leading-relaxed">{test.description}</p>
                             </div>
                           </div>
                           <div className="mt-auto pt-3 border-t border-zharyq-border">
                             <div className="flex items-center justify-between mb-3 text-[11px] text-zharyq-gray">
-                              <span className="flex items-center gap-1"><Clock size={12} /> {t.duration_minutes} мин</span>
-                              <span className="flex items-center gap-1"><Layers size={12} /> {t.questions_count} вопр.</span>
+                              <span className="flex items-center gap-1"><Clock size={12} /> {test.duration_minutes} {t('student.testDurationMin')}</span>
+                              <span className="flex items-center gap-1"><Layers size={12} /> {test.questions_count} {t('psychologist.questionsShort')}</span>
                             </div>
                             <button className="w-full py-1.5 text-[11px] font-semibold text-zharyq-dark border border-zharyq-border rounded-lg hover:bg-gray-50 transition-colors">
-                              Назначить классу
+                              {t('psychologist.assignToClass')}
                             </button>
                           </div>
                         </div>
@@ -1028,9 +1049,9 @@ export default function Psychologist() {
                   {notes.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 gap-3 text-zharyq-gray">
                       <ClipboardList size={36} className="opacity-30" />
-                      <p className="text-sm">Заметок пока нет. Создайте первую!</p>
+                      <p className="text-sm">{t('psychologist.notesEmpty')}</p>
                       <button onClick={openNoteCreate} className="text-sm font-medium text-white px-4 py-2 rounded-xl mt-2" style={{ background: 'var(--color-accent)' }}>
-                        <Plus size={14} className="inline mr-1" /> Создать заметку
+                        <Plus size={14} className="inline mr-1" /> {t('psychologist.noteModalCreate')}
                       </button>
                     </div>
                   ) : (
@@ -1074,7 +1095,7 @@ export default function Psychologist() {
                         className="border border-dashed border-zharyq-border rounded-2xl p-4 hover:border-zharyq-orange transition-colors cursor-pointer opacity-60 hover:opacity-100 flex flex-col items-center justify-center gap-2 text-zharyq-gray hover:text-zharyq-orange min-h-[200px]"
                       >
                         <Plus size={24} />
-                        <span className="text-xs">Новая заметка</span>
+                        <span className="text-xs">{t('psychologist.noteModalCreate')}</span>
                       </div>
                     </div>
                   )}
@@ -1087,7 +1108,7 @@ export default function Psychologist() {
               <div className="flex-1 overflow-y-auto p-6 bg-zharyq-bg/30 text-zharyq-dark animate-fade-in-up">
                 <div className="max-w-2xl mx-auto space-y-6">
                   <div className="bg-white border text-zharyq-dark border-zharyq-border rounded-2xl p-6">
-                    <h3 className="text-sm font-semibold mb-4">Информация о профиле</h3>
+                    <h3 className="text-sm font-semibold mb-4">{t('psychologist.settingsProfileInfo')}</h3>
                     <div className="flex items-center gap-4 mb-6">
                       <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-zharyq-teal to-blue-400 flex items-center justify-center text-white text-xl font-bold">
                         {authUser?.username?.[0]?.toUpperCase() || 'U'}
@@ -1099,32 +1120,32 @@ export default function Psychologist() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <p className="text-xs text-zharyq-gray mb-1">Email</p>
-                        <p className="text-sm font-medium">{authUser?.email || 'Не указан'}</p>
+                        <p className="text-xs text-zharyq-gray mb-1">{t('psychologist.settingsEmailLabel')}</p>
+                        <p className="text-sm font-medium">{authUser?.email || t('psychologist.settingsNotSpecified')}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-zharyq-gray mb-1">Класс</p>
-                        <p className="text-sm font-medium">{authUser?.class_name || 'Все'}</p>
+                        <p className="text-xs text-zharyq-gray mb-1">{t('psychologist.settingsClassLabel')}</p>
+                        <p className="text-sm font-medium">{authUser?.class_name || t('psychologist.settingsAllClasses')}</p>
                       </div>
                     </div>
                   </div>
 
                   <div className="bg-white border text-zharyq-dark border-zharyq-border rounded-2xl p-6">
-                    <h3 className="text-sm font-semibold mb-4">Смена пароля</h3>
+                    <h3 className="text-sm font-semibold mb-4">{t('psychologist.settingsChangePassword')}</h3>
                     <form className="space-y-4" onSubmit={handlePasswordChange}>
                       <div>
-                        <label className="block text-xs text-zharyq-gray mb-1">Текущий пароль</label>
+                        <label className="block text-xs text-zharyq-gray mb-1">{t('psychologist.settingsCurrentPassword')}</label>
                         <input type="password" name="current_password" required className="w-full text-zharyq-dark border border-zharyq-border rounded-xl px-3 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none" />
                       </div>
                       <div>
-                        <label className="block text-xs text-zharyq-gray mb-1">Новый пароль</label>
+                        <label className="block text-xs text-zharyq-gray mb-1">{t('psychologist.settingsNewPassword')}</label>
                         <input type="password" name="new_password" required className="w-full text-zharyq-dark border border-zharyq-border rounded-xl px-3 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none" />
                       </div>
                       <div>
-                        <label className="block text-xs text-zharyq-gray mb-1">Подтверждение пароля</label>
+                        <label className="block text-xs text-zharyq-gray mb-1">{t('psychologist.settingsConfirmPassword')}</label>
                         <input type="password" name="confirm_password" required className="w-full text-zharyq-dark border border-zharyq-border rounded-xl px-3 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none" />
                       </div>
-                      <button type="submit" className="px-4 py-2 bg-zharyq-orange text-white text-sm font-semibold rounded-xl hover:bg-orange-600 transition-colors">Обновить пароль</button>
+                      <button type="submit" className="px-4 py-2 bg-zharyq-orange text-white text-sm font-semibold rounded-xl hover:bg-orange-600 transition-colors">{t('psychologist.settingsUpdatePassword')}</button>
                     </form>
                   </div>
                 </div>
@@ -1133,18 +1154,177 @@ export default function Psychologist() {
           </>
         )}
 
+        {/* ANALYTICS VIEW */}
+        {view === 'analytics' && (() => {
+          const chartText = isDark ? '#A1A1AA' : '#6B7280'
+          const chartGrid = isDark ? '#3F3F46' : '#F3F4F6'
+          const surfaceColor = isDark ? '#27272A' : '#F9FAFB'
+
+          // Compute KPIs from already-loaded data
+          const activeAlerts = alerts.filter(a => !a.is_resolved)
+          const criticalCount = activeAlerts.filter(a => a.level === 'critical').length
+          const mediumCount = activeAlerts.filter(a => a.level === 'medium' || a.level === 'high').length
+          const wellbeing = students.length
+            ? Math.round(students.reduce((sum, u) => sum + (100 - (u.stress || 0)), 0) / students.length)
+            : 0
+          const engaged = students.filter(u => u.last_checkin_date).length
+          const engagementRate = students.length ? Math.round((engaged / students.length) * 100) : 0
+
+          // Stress distribution from students
+          const stressLow = students.filter(u => (u.stress || 0) < 40).length
+          const stressMed = students.filter(u => (u.stress || 0) >= 40 && (u.stress || 0) < 60).length
+          const stressHigh = students.filter(u => (u.stress || 0) >= 60 && (u.stress || 0) < 80).length
+          const stressCrit = students.filter(u => (u.stress || 0) >= 80).length
+
+          const pieData = {
+            labels: [t('psychologist.riskLow'), t('director.pieModerate'), t('psychologist.riskHigh'), t('psychologist.riskCritical')],
+            datasets: [{
+              data: [stressLow, stressMed, stressHigh, stressCrit],
+              backgroundColor: ['#14B8A6', '#60A5FA', '#F59E0B', '#EF4444'],
+              borderColor: surfaceColor,
+              borderWidth: 2,
+            }]
+          }
+          const pieOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: { color: chartText, boxWidth: 12, boxHeight: 12, padding: 14, font: { size: 12 } }
+              }
+            }
+          }
+
+          const sortedOrg = [...analyticsOrg].reverse()
+          const lineData = {
+            labels: sortedOrg.length
+              ? sortedOrg.map(m => new Date(m.recorded_at).toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' }))
+              : [t('director.noData')],
+            datasets: [{
+              label: t('director.wellbeingChart'),
+              data: sortedOrg.length ? sortedOrg.map(m => m.wellbeing_index) : [0],
+              borderColor: '#FF7100',
+              backgroundColor: 'rgba(255, 113, 0, 0.12)',
+              fill: true,
+              tension: 0.35,
+              borderWidth: 2,
+              pointRadius: 4,
+              pointHoverRadius: 5,
+              pointBorderWidth: 2,
+              pointBackgroundColor: '#FFFFFF',
+              pointBorderColor: '#FF7100',
+            }]
+          }
+          const lineOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: chartText, font: { size: 12 } } } },
+            scales: {
+              x: { ticks: { color: chartText }, grid: { color: chartGrid } },
+              y: { min: 0, max: 100, ticks: { color: chartText, stepSize: 20 }, grid: { color: chartGrid } }
+            }
+          }
+
+          return (
+            <div className="flex-1 overflow-y-auto p-6 animate-fade-in-up space-y-6">
+              {/* KPI Cards */}
+              <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {[
+                  { label: t('psychologist.analyticsWellbeingLabel'), value: `${wellbeing}%`, sub: t('psychologist.analyticsWellbeingSub'), subCls: 'text-emerald-600' },
+                  { label: t('psychologist.analyticsAlertsLabel'), value: `${criticalCount} / ${mediumCount}`, sub: t('psychologist.analyticsAlertsSub'), subCls: 'text-red-600' },
+                  { label: t('psychologist.analyticsEngagementLabel'), value: `${engagementRate}%`, sub: t('psychologist.analyticsEngagementSub'), subCls: 'text-zharyq-teal' },
+                ].map((card, i) => (
+                  <article key={i} className="rounded-2xl border border-zharyq-border bg-zharyq-bg p-5">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-zharyq-gray font-semibold mb-3">{card.label}</p>
+                    <div className="flex items-end justify-between gap-2">
+                      <p className="text-3xl font-semibold">{card.value}</p>
+                      <span className={`text-xs font-medium ${card.subCls}`}>{card.sub}</span>
+                    </div>
+                  </article>
+                ))}
+              </section>
+
+              {/* Charts */}
+              <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <article className="rounded-2xl border border-zharyq-border bg-zharyq-bg p-5 xl:col-span-1">
+                  <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray mb-4">{t('psychologist.analyticsStressLevels')}</h2>
+                  <div style={{ height: '280px' }} className="flex items-center justify-center">
+                    <Pie data={pieData} options={pieOptions} />
+                  </div>
+                </article>
+                <article className="rounded-2xl border border-zharyq-border bg-zharyq-bg p-5 xl:col-span-2">
+                  <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray mb-4">{t('psychologist.analyticsEmotionalBg')}</h2>
+                  <div style={{ height: '280px' }}>
+                    <Line data={lineData} options={lineOptions} />
+                  </div>
+                </article>
+              </section>
+
+              {/* Users table */}
+              <section>
+                <article className="rounded-2xl border border-zharyq-border bg-zharyq-bg p-5">
+                  <div className="mb-4">
+                    <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zharyq-gray">{t('psychologist.analyticsDetailedTitle')}</h2>
+                    <p className="text-sm text-zharyq-gray mt-1">{t('psychologist.analyticsTotalInSample', { count: students.length })}</p>
+                  </div>
+                  <div className="overflow-x-auto rounded-xl border border-zharyq-border">
+                    <table className="w-full min-w-[700px] text-sm">
+                      <thead className="bg-white border-b border-zharyq-border">
+                        <tr>
+                          {[t('director.colId'), t('director.colRoleDetails'), t('director.colRisk'), t('director.colCourses'), t('director.colSessions'), t('director.colLastCheckin')].map(h => (
+                            <th key={h} className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-zharyq-gray">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white">
+                        {students.map((u, i) => {
+                          const stress = u.stress || 0
+                          const riskLabel = stress >= 80 ? t('psychologist.riskCritical') : stress >= 60 ? t('psychologist.riskHigh') : stress >= 40 ? t('psychologist.riskMedium') : t('psychologist.riskLow')
+                          const riskCls = stress >= 80 ? 'bg-red-50 text-red-600 border-red-200' : stress >= 60 ? 'bg-orange-50 text-orange-600 border-orange-200' : stress >= 40 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-green-50 text-green-700 border-green-200'
+                          const checkin = u.last_checkin_date ? new Date(u.last_checkin_date).toLocaleString('ru-RU') : t('director.noCheckins')
+                          return (
+                            <tr key={u.id} className={`${i < students.length - 1 ? 'border-b border-zharyq-border' : ''} hover:bg-zharyq-bg transition-colors`}>
+                              <td className="px-4 py-3 font-medium">
+                                <div className="flex flex-col">
+                                  <span>{studentDisplayName(u, t)}</span>
+                                  <span className="text-xs text-zharyq-gray">{u.anonymous_id || `ID: ${u.id}`}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-zharyq-gray text-xs">{u.class_name || '—'}</td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold border ${riskCls}`}>{riskLabel} ({stress})</span>
+                              </td>
+                              <td className="px-4 py-3">{u.courses_count || 0}</td>
+                              <td className="px-4 py-3">{u.sessions_count || 0}</td>
+                              <td className="px-4 py-3 text-zharyq-gray">{checkin}</td>
+                            </tr>
+                          )
+                        })}
+                        {students.length === 0 && (
+                          <tr><td colSpan="6" className="px-4 py-8 text-center text-zharyq-gray">{t('director.noData')}</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+              </section>
+            </div>
+          )
+        })()}
+
         {/* COURSES VIEW */}
         {view === 'courses' && (
           <div className="flex-1 overflow-y-auto p-6 animate-fade-in-up">
             <div className="max-w-4xl mx-auto">
               {coursesLoading ? (
-                <div className="flex items-center justify-center py-20 text-zharyq-gray text-sm">Загрузка...</div>
+                <div className="flex items-center justify-center py-20 text-zharyq-gray text-sm">{t('psychologist.loading')}</div>
               ) : courses.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-3 text-zharyq-gray">
                   <BookOpen size={36} className="opacity-30" />
-                  <p className="text-sm">Курсов пока нет. Создайте первый!</p>
+                  <p className="text-sm">{t('psychologist.courseNone')}</p>
                   <button onClick={() => navigate('/course-builder')} className="text-sm font-medium text-white px-4 py-2 rounded-xl mt-2" style={{ background: 'var(--color-accent)' }}>
-                    <Plus size={14} className="inline mr-1" /> Создать курс
+                    <Plus size={14} className="inline mr-1" /> {t('psychologist.courseCreateNew')}
                   </button>
                 </div>
               ) : (
@@ -1164,28 +1344,28 @@ export default function Psychologist() {
                               <span className={`text-[10px] font-semibold border px-2 py-0.5 rounded-full ${tagStyle.tag}`}>{c.category}</span>
                             )}
                             <span className={`ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full border ${isDraft ? 'text-zharyq-gray bg-white border-zharyq-border' : 'text-teal-700 bg-teal-50 border-teal-200'}`}>
-                              {isDraft ? 'Черновик' : 'Опубликован'}
+                              {isDraft ? t('psychologist.courseDraft') : t('psychologist.coursePublished')}
                             </span>
                           </div>
                         </div>
                         <div className="p-4">
                           <h4 className="text-sm font-semibold mb-1 truncate">{c.title}</h4>
-                          <p className="text-xs text-zharyq-gray mb-3 line-clamp-2">{c.description || 'Описание не добавлено'}</p>
+                          <p className="text-xs text-zharyq-gray mb-3 line-clamp-2">{c.description || t('psychologist.courseNoDescription')}</p>
                           <div className="flex items-center gap-3 text-[11px] text-zharyq-gray mb-4">
-                            <span className="flex items-center gap-1"><Layers size={11} /> {c.module_count} {c.module_count === 1 ? 'модуль' : c.module_count < 5 ? 'модуля' : 'модулей'}</span>
+                            <span className="flex items-center gap-1"><Layers size={11} /> {c.module_count} {c.module_count === 1 ? t('psychologist.courseModuleOne') : c.module_count < 5 ? t('psychologist.courseModuleFew') : t('psychologist.courseModuleMany')}</span>
                           </div>
                           <div className="flex items-center gap-2 pt-2 border-t border-zharyq-border">
                             <button
                               onClick={() => navigate(`/course-builder?id=${c.id}`)}
                               className="flex items-center gap-1.5 text-xs font-medium text-zharyq-gray hover:text-zharyq-orange transition-colors px-2 py-1 rounded-lg hover:bg-orange-50"
                             >
-                              <Pencil size={12} /> Редактировать
+                              <Pencil size={12} /> {t('psychologist.courseEdit')}
                             </button>
                             <button
                               onClick={() => setDeleteConfirm(c)}
                               className="flex items-center gap-1.5 text-xs font-medium text-zharyq-gray hover:text-red-500 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 ml-auto"
                             >
-                              <Trash2 size={12} /> Удалить
+                              <Trash2 size={12} /> {t('psychologist.courseDelete')}
                             </button>
                           </div>
                         </div>
@@ -1197,7 +1377,7 @@ export default function Psychologist() {
                     className="border border-dashed border-zharyq-border rounded-2xl p-4 hover:border-zharyq-orange transition-colors cursor-pointer opacity-60 hover:opacity-100 flex flex-col items-center justify-center gap-2 text-zharyq-gray hover:text-zharyq-orange min-h-[220px]"
                   >
                     <Plus size={24} />
-                    <span className="text-xs">Создать курс</span>
+                    <span className="text-xs">{t('psychologist.courseCreateNew')}</span>
                   </div>
                 </div>
               )}
@@ -1212,24 +1392,24 @@ export default function Psychologist() {
         {selectedUser && (
           <>
             <div className="p-5 border-b border-zharyq-border flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Профиль учащегося</h2>
+              <h2 className="text-sm font-semibold">{t('psychologist.profileDrawerTitle')}</h2>
               <button onClick={closeProfile} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><X size={20} /></button>
             </div>
             <div className="p-5 flex-1">
               <div className="flex items-center gap-3 mb-5 pb-5 border-b border-zharyq-border">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-orange-300 to-red-400 flex items-center justify-center text-white text-sm font-bold">U{selectedUser.id}</div>
                 <div>
-                  <p className="font-semibold">{studentDisplayName(selectedUser)}</p>
-                  <p className="text-xs text-zharyq-gray">{selectedUser.class_name} · Последний чек-ин: {selectedUser.last_checkin_date ? timeAgo(selectedUser.last_checkin_date) : 'никогда'}</p>
+                  <p className="font-semibold">{studentDisplayName(selectedUser, t)}</p>
+                  <p className="text-xs text-zharyq-gray">{selectedUser.class_name} · {t('psychologist.lastCheckin')}: {selectedUser.last_checkin_date ? timeAgo(selectedUser.last_checkin_date, t) : t('psychologist.never')}</p>
                 </div>
-                <span className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${studentStatus(selectedUser.stress).class}`} style={studentStatus(selectedUser.stress).style}>{studentStatus(selectedUser.stress).label}</span>
+                <span className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${studentStatus(selectedUser.stress, t).class}`} style={studentStatus(selectedUser.stress, t).style}>{studentStatus(selectedUser.stress, t).label}</span>
               </div>
-              <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Психологический профиль</p>
+              <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">{t('psychologist.psychProfile')}</p>
               <div className="w-full aspect-square max-w-[240px] mx-auto mb-5">
                 <Radar data={radarData} options={radarOptions} />
               </div>
               <div className="grid grid-cols-2 gap-3 mb-5">
-                {[{ label: 'Стресс', value: selectedUser.stress || 0, color: 'text-red-500' }, { label: 'Мотивация', value: selectedUser.motivation || 0, color: 'text-amber-500' }, { label: 'Тревожность', value: selectedUser.anxiety || 0, color: 'text-orange-500' }, { label: 'Курсов', value: selectedUser.courses_count || 0, color: 'text-blue-500' }].map(m => (
+                {[{ label: t('psychologist.profileMetricStress'), value: selectedUser.stress || 0, color: 'text-red-500' }, { label: t('psychologist.profileMetricMotivation'), value: selectedUser.motivation || 0, color: 'text-amber-500' }, { label: t('psychologist.profileMetricAnxiety'), value: selectedUser.anxiety || 0, color: 'text-orange-500' }, { label: t('psychologist.profileMetricCourses'), value: selectedUser.courses_count || 0, color: 'text-blue-500' }].map(m => (
                   <div key={m.label} className="border border-zharyq-border rounded-xl p-3">
                     <p className="text-xs text-zharyq-gray mb-1">{m.label}</p>
                     <div className="flex items-end gap-2">
@@ -1251,14 +1431,14 @@ export default function Psychologist() {
                 style={{ background: 'var(--color-accent)' }}
               >
                 <Calendar size={16} className="inline mr-2" />
-                Назначить сессию
+                {t('psychologist.scheduleSession')}
               </button>
 
               {/* Test Results */}
               <div className="border-t border-zharyq-border pt-5">
-                <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Результаты тестов</p>
+                <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">{t('psychologist.testResultsTitle')}</p>
                 {userTestResults.length === 0 ? (
-                  <p className="text-xs text-zharyq-gray text-center py-3">Нет результатов</p>
+                  <p className="text-xs text-zharyq-gray text-center py-3">{t('psychologist.noResults')}</p>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {userTestResults.map(r => {
@@ -1272,25 +1452,25 @@ export default function Psychologist() {
                           {r.test_slug === 'hardiness-maddi' ? (
                             <div className="grid grid-cols-4 gap-1 text-center">
                               <div>
-                                <p className="text-[9px] text-zharyq-gray">Общий</p>
+                                <p className="text-[9px] text-zharyq-gray">{t('psychologist.totalScoreLabel')}</p>
                                 <p className="text-sm font-bold">{r.total_score}</p>
                               </div>
                               <div>
-                                <p className="text-[9px] text-zharyq-gray">Вовлеч.</p>
+                                <p className="text-[9px] text-zharyq-gray">{t('psychologist.involvementLabel')}</p>
                                 <p className="text-sm font-bold">{r.involvement_score}</p>
                               </div>
                               <div>
-                                <p className="text-[9px] text-zharyq-gray">Контроль</p>
+                                <p className="text-[9px] text-zharyq-gray">{t('psychologist.controlLabel')}</p>
                                 <p className="text-sm font-bold">{r.control_score}</p>
                               </div>
                               <div>
-                                <p className="text-[9px] text-zharyq-gray">Риск</p>
+                                <p className="text-[9px] text-zharyq-gray">{t('psychologist.riskLabel')}</p>
                                 <p className="text-sm font-bold">{r.risk_score}</p>
                               </div>
                             </div>
                           ) : (
                             <div>
-                               <p className="text-[10px] text-zharyq-gray"><span className="font-semibold text-zharyq-dark">{r.total_score}</span> баллов</p>
+                               <p className="text-[10px] text-zharyq-gray"><span className="font-semibold text-zharyq-dark">{r.total_score}</span> {t('psychologist.pointsLabel')}</p>
                             </div>
                           )}
                           <p className="text-[10px] text-zharyq-gray mt-2">{new Date(r.created_at).toLocaleDateString('ru-RU')}</p>
@@ -1310,33 +1490,33 @@ export default function Psychologist() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-zharyq-border">
-              <h2 className="text-sm font-semibold">{editingCourse ? 'Редактировать курс' : 'Создать курс'}</h2>
+              <h2 className="text-sm font-semibold">{editingCourse ? t('psychologist.courseModalEdit') : t('psychologist.courseModalCreate')}</h2>
               <button onClick={closeModal} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><X size={20} /></button>
             </div>
             <div className="p-6 flex flex-col gap-4">
               <div>
-                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Название</label>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.courseFieldTitle')}</label>
                 <input
                   type="text"
                   value={form.title}
                   onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-                  placeholder="Управление стрессом"
+                  placeholder={t('psychologist.courseTitlePlaceholder')}
                   className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Описание</label>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.courseFieldDesc')}</label>
                 <textarea
                   value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  placeholder="Краткое описание курса..."
+                  placeholder={t('psychologist.courseDescPlaceholder')}
                   rows={3}
                   className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none resize-none"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Категория</label>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.courseFieldCategory')}</label>
                   <select
                     value={form.category}
                     onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
@@ -1346,7 +1526,7 @@ export default function Psychologist() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Тип контента</label>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.courseFieldContentType')}</label>
                   <select
                     value={form.content_type}
                     onChange={e => setForm(f => ({ ...f, content_type: e.target.value }))}
@@ -1358,7 +1538,7 @@ export default function Psychologist() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Время прохождения (мин)</label>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.courseFieldDuration')}</label>
                   <input
                     type="number"
                     min={1}
@@ -1368,7 +1548,7 @@ export default function Psychologist() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Количество уроков</label>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.courseFieldLessons')}</label>
                   <input
                     type="number"
                     min={1}
@@ -1379,18 +1559,18 @@ export default function Psychologist() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Вопросы курса</label>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.courseFieldQuestions')}</label>
                 <textarea
                   value={form.questions}
                   onChange={e => setForm(f => ({ ...f, questions: e.target.value }))}
-                  placeholder="Введите вопросы курса (каждый с новой строки)..."
+                  placeholder={t('psychologist.courseQuestionsPlaceholder')}
                   rows={4}
                   className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none resize-none"
                 />
               </div>
               <div className="flex gap-3 pt-2">
                 <button onClick={closeModal} className="flex-1 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-gray bg-white hover:bg-zharyq-bg transition-colors">
-                  Отмена
+                  {t('psychologist.cancel')}
                 </button>
                 <button
                   onClick={handleSave}
@@ -1398,7 +1578,7 @@ export default function Psychologist() {
                   className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
                   style={{ background: 'var(--color-accent)' }}
                 >
-                  {saving ? 'Сохранение...' : editingCourse ? 'Сохранить' : 'Создать'}
+                  {saving ? t('psychologist.saving') : editingCourse ? t('psychologist.save') : t('psychologist.create')}
                 </button>
               </div>
 
@@ -1413,39 +1593,39 @@ export default function Psychologist() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto text-zharyq-dark" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-zharyq-border">
               <h2 className="text-sm font-semibold">
-                {sessionModalMode === 'create' ? 'Назначить сессию' : sessionModalMode === 'edit' ? 'Редактировать сессию' : 'Просмотр сессии'}
+                {sessionModalMode === 'create' ? t('psychologist.sessionModalCreate') : sessionModalMode === 'edit' ? t('psychologist.sessionModalEdit') : t('psychologist.sessionModalView')}
               </h2>
               <button onClick={() => setSessionModalOpen(false)} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><X size={20} /></button>
             </div>
             <div className="p-6 flex flex-col gap-4">
               {/* Student select */}
               <div>
-                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Учащийся</label>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.sessionFieldStudent')}</label>
                 {sessionModalMode === 'view' ? (
-                  <p className="text-sm font-medium py-2">{studentDisplayName(students.find(s => s.id === sessionForm.user_id)) || selectedSession?.student_name || `Студент #${sessionForm.user_id}`}</p>
+                  <p className="text-sm font-medium py-2">{studentDisplayName(students.find(s => s.id === sessionForm.user_id), t) || selectedSession?.student_name || `${t('psychologist.studentPrefix')}${sessionForm.user_id}`}</p>
                 ) : (
                   <select
                     value={sessionForm.user_id}
                     onChange={e => setSessionForm(f => ({ ...f, user_id: e.target.value }))}
                     className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
                   >
-                    <option value="">Выберите учащегося...</option>
+                    <option value="">{t('psychologist.sessionSelectStudent')}</option>
                     {students.map(s => (
-                      <option key={s.id} value={s.id}>{studentDisplayName(s)} — {s.class_name || 'Нет класса'}</option>
+                      <option key={s.id} value={s.id}>{studentDisplayName(s, t)} — {s.class_name || t('psychologist.noClass')}</option>
                     ))}
                   </select>
                 )}
               </div>
               {/* Title */}
               <div>
-                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Тема сессии</label>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.sessionFieldTitle')}</label>
                 {sessionModalMode === 'view' ? (
                   <p className="text-sm font-medium py-2">{sessionForm.title}</p>
                 ) : (
                   <input
                     type="text" value={sessionForm.title}
                     onChange={e => setSessionForm(f => ({ ...f, title: e.target.value }))}
-                    placeholder="Например: Консультация по стрессу"
+                    placeholder={t('psychologist.sessionTitlePlaceholder')}
                     className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
                   />
                 )}
@@ -1453,7 +1633,7 @@ export default function Psychologist() {
               {/* Date & Time */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Дата</label>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.sessionFieldDate')}</label>
                   {sessionModalMode === 'view' ? (
                     <p className="text-sm font-medium py-2">{sessionForm.scheduled_date ? new Date(sessionForm.scheduled_date + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</p>
                   ) : (
@@ -1465,7 +1645,7 @@ export default function Psychologist() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Время</label>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.sessionFieldTime')}</label>
                   {sessionModalMode === 'view' ? (
                     <p className="text-sm font-medium py-2">{sessionForm.scheduled_time || '-'}</p>
                   ) : (
@@ -1480,9 +1660,9 @@ export default function Psychologist() {
               {/* Duration & Type */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Длительность (мин)</label>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.sessionFieldDuration')}</label>
                   {sessionModalMode === 'view' ? (
-                    <p className="text-sm font-medium py-2">{sessionForm.duration_minutes} мин</p>
+                    <p className="text-sm font-medium py-2">{t('psychologist.sessionDurationMin', { minutes: sessionForm.duration_minutes })}</p>
                   ) : (
                     <input
                       type="number" min={10} max={180} value={sessionForm.duration_minutes}
@@ -1492,32 +1672,32 @@ export default function Psychologist() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Тип</label>
+                  <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.sessionFieldType')}</label>
                   {sessionModalMode === 'view' ? (
-                    <p className="text-sm font-medium py-2">{sessionForm.session_type === 'individual' ? 'Индивидуальная' : sessionForm.session_type === 'group' ? 'Групповая' : sessionForm.session_type}</p>
+                    <p className="text-sm font-medium py-2">{sessionForm.session_type === 'individual' ? t('psychologist.sessionTypeIndividual') : sessionForm.session_type === 'group' ? t('psychologist.sessionTypeGroup') : sessionForm.session_type}</p>
                   ) : (
                     <select
                       value={sessionForm.session_type}
                       onChange={e => setSessionForm(f => ({ ...f, session_type: e.target.value }))}
                       className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
                     >
-                      <option value="individual">Индивидуальная</option>
-                      <option value="group">Групповая</option>
-                      <option value="consultation">Консультация</option>
+                      <option value="individual">{t('psychologist.sessionTypeIndividual')}</option>
+                      <option value="group">{t('psychologist.sessionTypeGroup')}</option>
+                      <option value="consultation">{t('psychologist.sessionTypeConsultation')}</option>
                     </select>
                   )}
                 </div>
               </div>
               {/* Notes */}
               <div>
-                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Заметки</label>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.sessionFieldNotes')}</label>
                 {sessionModalMode === 'view' ? (
-                  <p className="text-sm py-2 text-zharyq-gray">{sessionForm.notes || 'Нет заметок'}</p>
+                  <p className="text-sm py-2 text-zharyq-gray">{sessionForm.notes || t('psychologist.sessionNoNotes')}</p>
                 ) : (
                   <textarea
                     value={sessionForm.notes}
                     onChange={e => setSessionForm(f => ({ ...f, notes: e.target.value }))}
-                    placeholder="Заметки к сессии..."
+                    placeholder={t('psychologist.sessionNotesPlaceholder')}
                     rows={3}
                     className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none resize-none"
                   />
@@ -1526,13 +1706,13 @@ export default function Psychologist() {
               {/* Status for view */}
               {sessionModalMode === 'view' && selectedSession && (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zharyq-gray">Статус:</span>
+                  <span className="text-xs text-zharyq-gray">{t('psychologist.sessionStatus')}</span>
                   <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
                     selectedSession.is_completed
                       ? 'border-teal-100 text-teal-600 bg-teal-50'
                       : 'border-orange-100 text-orange-600 bg-orange-50'
                   }`}>
-                    {selectedSession.is_completed ? 'Завершена' : 'Запланирована'}
+                    {selectedSession.is_completed ? t('psychologist.sessionCompleted') : t('psychologist.sessionPlanned')}
                   </span>
                 </div>
               )}
@@ -1541,22 +1721,22 @@ export default function Psychologist() {
                 {sessionModalMode === 'view' ? (
                   <>
                     <button onClick={switchToEdit} className="flex-1 flex items-center justify-center gap-2 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-dark hover:bg-zharyq-bg transition-colors">
-                      <Edit3 size={14} /> Редактировать
+                      <Edit3 size={14} /> {t('psychologist.editBtn')}
                     </button>
                     {!sessionDeleteConfirm ? (
                       <button onClick={() => setSessionDeleteConfirm(true)} className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center gap-2">
-                        <Trash2 size={14} /> Удалить
+                        <Trash2 size={14} /> {t('psychologist.deleteBtn')}
                       </button>
                     ) : (
                       <button onClick={handleSessionDelete} className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors animate-pulse">
-                        Подтвердить удаление
+                        {t('psychologist.confirmDelete')}
                       </button>
                     )}
                   </>
                 ) : (
                   <>
                     <button onClick={() => setSessionModalOpen(false)} className="flex-1 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-gray bg-white hover:bg-zharyq-bg transition-colors">
-                      Отмена
+                      {t('psychologist.cancel')}
                     </button>
                     <button
                       onClick={handleSessionSave}
@@ -1564,7 +1744,7 @@ export default function Psychologist() {
                       className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
                       style={{ background: 'var(--color-accent)' }}
                     >
-                      {sessionSaving ? 'Сохранение...' : sessionModalMode === 'edit' ? 'Сохранить' : 'Назначить'}
+                      {sessionSaving ? t('psychologist.saving') : sessionModalMode === 'edit' ? t('psychologist.save') : t('psychologist.sessionsCreate')}
                     </button>
                   </>
                 )}
@@ -1580,34 +1760,34 @@ export default function Psychologist() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto text-zharyq-dark" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-zharyq-border">
               <h2 className="text-sm font-semibold">
-                {noteModalMode === 'create' ? 'Новая заметка' : noteModalMode === 'edit' ? 'Редактировать заметку' : 'Просмотр заметки'}
+                {noteModalMode === 'create' ? t('psychologist.noteModalCreate') : noteModalMode === 'edit' ? t('psychologist.noteModalEdit') : t('psychologist.noteModalView')}
               </h2>
               <button onClick={() => setNoteModalOpen(false)} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><X size={20} /></button>
             </div>
             <div className="p-6 flex flex-col gap-4">
               <div>
-                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Заголовок</label>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.noteFieldTitle')}</label>
                 {noteModalMode === 'view' ? (
                   <p className="text-sm font-medium py-2">{noteForm.title}</p>
                 ) : (
                   <input
                     type="text" value={noteForm.title}
                     onChange={e => setNoteForm(f => ({ ...f, title: e.target.value }))}
-                    placeholder="Заголовок заметки..."
+                    placeholder={t('psychologist.noteTitlePlaceholder')}
                     className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none"
                   />
                 )}
               </div>
               
               <div>
-                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">Содержание</label>
+                <label className="block text-xs font-semibold text-zharyq-gray mb-1.5">{t('psychologist.noteFieldContent')}</label>
                 {noteModalMode === 'view' ? (
-                  <div className="text-sm py-2 text-zharyq-gray whitespace-pre-wrap">{noteForm.description || 'Нет описания'}</div>
+                  <div className="text-sm py-2 text-zharyq-gray whitespace-pre-wrap">{noteForm.description || t('psychologist.noteNoContent')}</div>
                 ) : (
                   <textarea
                     value={noteForm.description}
                     onChange={e => setNoteForm(f => ({ ...f, description: e.target.value }))}
-                    placeholder="Текст вашей заметки..."
+                    placeholder={t('psychologist.noteContentPlaceholder')}
                     rows={6}
                     className="w-full border border-zharyq-border rounded-xl px-3 py-2.5 text-sm bg-white text-zharyq-dark focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all outline-none resize-none"
                   />
@@ -1617,12 +1797,12 @@ export default function Psychologist() {
               {/* Images Section */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold text-zharyq-gray">Фотографии</label>
+                  <label className="block text-xs font-semibold text-zharyq-gray">{t('psychologist.noteFieldPhotos')}</label>
                   {noteModalMode !== 'view' && (
                     <div>
                       <input type="file" id="note-images-upload" multiple accept="image/*" className="hidden" onChange={handleNoteImageAdd} />
                       <label htmlFor="note-images-upload" className="cursor-pointer text-xs font-medium text-zharyq-orange hover:text-orange-600 flex items-center gap-1 bg-orange-50 px-2 py-1 rounded-lg">
-                        <Upload size={12} /> Добавить
+                        <Upload size={12} /> {t('psychologist.noteAddPhoto')}
                       </label>
                     </div>
                   )}
@@ -1657,7 +1837,7 @@ export default function Psychologist() {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-[11px] text-zharyq-gray italic">Нет прикрепленных фото</div>
+                  <div className="text-[11px] text-zharyq-gray italic">{t('psychologist.noteNoPhotos')}</div>
                 )}
               </div>
 
@@ -1665,7 +1845,7 @@ export default function Psychologist() {
               {noteModalMode === 'view' && selectedNote && (
                  <div className="flex items-center gap-2 mt-2 pt-4 border-t border-zharyq-border">
                    <Clock size={12} className="text-zharyq-gray" />
-                   <span className="text-xs text-zharyq-gray">Создано: {new Date(selectedNote.created_at).toLocaleString('ru-RU')}</span>
+                   <span className="text-xs text-zharyq-gray">{t('psychologist.noteCreated')} {new Date(selectedNote.created_at).toLocaleString('ru-RU')}</span>
                  </div>
               )}
 
@@ -1674,22 +1854,22 @@ export default function Psychologist() {
                 {noteModalMode === 'view' ? (
                   <>
                     <button onClick={switchNoteToEdit} className="flex-1 flex items-center justify-center gap-2 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-dark hover:bg-zharyq-bg transition-colors">
-                      <Edit3 size={14} /> Редактировать
+                      <Edit3 size={14} /> {t('psychologist.editBtn')}
                     </button>
                     {!noteDeleteConfirm ? (
                       <button onClick={() => setNoteDeleteConfirm(true)} className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center gap-2">
-                        <Trash2 size={14} /> Удалить
+                        <Trash2 size={14} /> {t('psychologist.deleteBtn')}
                       </button>
                     ) : (
                       <button onClick={handleNoteDelete} className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors animate-pulse">
-                        Подтвердить удаление
+                        {t('psychologist.confirmDelete')}
                       </button>
                     )}
                   </>
                 ) : (
                   <>
                     <button onClick={() => setNoteModalOpen(false)} className="flex-1 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-gray bg-white hover:bg-zharyq-bg transition-colors">
-                      Отмена
+                      {t('psychologist.cancel')}
                     </button>
                     <button
                       onClick={handleNoteSave}
@@ -1697,7 +1877,7 @@ export default function Psychologist() {
                       className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
                       style={{ background: 'var(--color-accent)' }}
                     >
-                      {noteSaving ? 'Сохранение...' : noteModalMode === 'edit' ? 'Сохранить' : 'Создать'}
+                      {noteSaving ? t('psychologist.saving') : noteModalMode === 'edit' ? t('psychologist.save') : t('psychologist.create')}
                     </button>
                   </>
                 )}
@@ -1724,14 +1904,14 @@ export default function Psychologist() {
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            <h2 className="text-sm font-semibold mb-2">Удалить курс?</h2>
-            <p className="text-xs text-zharyq-gray mb-5">«{deleteConfirm.title}» будет удалён без возможности восстановления.</p>
+            <h2 className="text-sm font-semibold mb-2">{t('psychologist.deleteCourseTitle')}</h2>
+            <p className="text-xs text-zharyq-gray mb-5">{t('psychologist.deleteCourseBody', { title: deleteConfirm.title })}</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirm(null)} className="flex-1 border border-zharyq-border rounded-xl py-2.5 text-sm font-medium text-zharyq-gray hover:bg-zharyq-bg transition-colors">
-                Отмена
+                {t('psychologist.cancel')}
               </button>
               <button onClick={() => handleDelete(deleteConfirm.id)} className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors">
-                Удалить
+                {t('psychologist.deleteBtn')}
               </button>
             </div>
           </div>

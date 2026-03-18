@@ -16,10 +16,12 @@ import {
   LineElement, Filler, Tooltip, Legend, RadialLinearScale
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 import { useTheme } from '../context/ThemeContext'
 import PasswordChangeForm from '../components/PasswordChangeForm'
 import { fetchUserMetrics, fetchTests, fetchTestDetail, submitTest, fetchMyTestResults, updateSettings, fetchStreak } from '../api/api'
 import { getTestLevelInfo, getTestInterpretation } from '../utils/testLevels'
+import { useTranslation } from 'react-i18next'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend, RadialLinearScale)
 
@@ -36,14 +38,6 @@ const CATEGORY_META = {
 const DEFAULT_META = { icon: BookOpen, iconColor: 'text-zharyq-gray', bg: 'bg-gray-50', tagColor: 'text-zharyq-gray', progressColor: 'bg-zharyq-teal' }
 
 const FILTERS = ['all', 'Стресс', 'Выгорание', 'Эмоции', 'Мотивация', 'Тревожность']
-const FILTER_LABELS = { all: 'Все', 'Стресс': 'Стресс', 'Выгорание': 'Выгорание', 'Эмоции': 'Эмоции', 'Мотивация': 'Мотивация', 'Тревожность': 'Тревожность' }
-
-const ANSWER_OPTIONS = [
-  { value: 0, label: 'Нет' },
-  { value: 1, label: 'Скорее нет, чем да' },
-  { value: 2, label: 'Скорее да, чем нет' },
-  { value: 3, label: 'Да' },
-]
 
 function getChartColors(isDark) {
   return {
@@ -52,56 +46,73 @@ function getChartColors(isDark) {
   }
 }
 
-function getDynamicGreeting(metrics, testHistory) {
+function getDynamicGreeting(metrics, testHistory, t) {
   const hour = new Date().getHours()
   const day = new Date().getDay() // 0=вс, 1=пн, ..., 5=пт, 6=сб
 
   let timeGreeting
-  if (hour >= 5 && hour < 12) timeGreeting = 'Доброе утро'
-  else if (hour >= 12 && hour < 18) timeGreeting = 'Добрый день'
-  else if (hour >= 18 && hour < 22) timeGreeting = 'Добрый вечер'
-  else timeGreeting = 'Доброй ночи'
+  if (hour >= 5 && hour < 12) timeGreeting = t('student.greetingMorning')
+  else if (hour >= 12 && hour < 18) timeGreeting = t('student.greetingAfternoon')
+  else if (hour >= 18 && hour < 22) timeGreeting = t('student.greetingEvening')
+  else timeGreeting = t('student.greetingNight')
 
   const latest = metrics[metrics.length - 1]
   const latestTest = testHistory[0]
 
   let subtitle
   if (latest?.stress > 70) {
-    subtitle = 'Кажется, последнее время было напряжённым — как вы сейчас?'
+    subtitle = t('student.greetingSubtitleHighStress')
   } else if (latest?.motivation < 30) {
-    subtitle = 'Мотивация немного упала. Поговорим о том, что происходит?'
+    subtitle = t('student.greetingSubtitleLowMotivation')
   } else if (latestTest?.overall_level === 'low') {
-    subtitle = 'Последний тест показал, что вам может быть непросто. Расскажите, как дела?'
+    subtitle = t('student.greetingSubtitleLowTestLevel')
   } else if (day === 1 && hour < 14) {
-    subtitle = 'Новая неделя — как настрой?'
+    subtitle = t('student.greetingSubtitleMonday')
   } else if (day === 5 && hour >= 14) {
-    subtitle = 'Пятница! Как прошла неделя?'
+    subtitle = t('student.greetingSubtitleFriday')
   } else if (day === 0 || day === 6) {
-    subtitle = 'Хороших выходных! Как отдыхаете?'
+    subtitle = t('student.greetingSubtitleWeekend')
   } else if (hour >= 18) {
-    subtitle = 'Как прошёл день?'
+    subtitle = t('student.greetingSubtitleEvening')
   } else if (hour < 9) {
-    subtitle = 'Как начинается ваше утро?'
+    subtitle = t('student.greetingSubtitleMorning')
   } else {
-    subtitle = 'Как вы себя чувствуете сегодня?'
+    subtitle = t('student.greetingSubtitleDefault')
   }
 
   return { timeGreeting, subtitle }
 }
 
-const ACHIEVEMENTS_DEF = [
-  { id: 'first_step',      icon: Flag,          label: 'Точка отсчёта',       desc: 'Пройдите первый диагностический тест',                                          earned_color: 'text-zharyq-orange', earned_border: 'border-orange-200', earned_border_dark: 'border-orange-800/60', earned_bg: 'bg-orange-50',  earned_bg_dark: 'bg-orange-900/30' },
-  { id: 'connected',       icon: MessageCircle, label: 'На связи',             desc: 'Проведите первую полноценную сессию с AI-ассистентом (мин. 5 сообщений)',       earned_color: 'text-zharyq-teal',   earned_border: 'border-teal-200',   earned_border_dark: 'border-teal-800/60',   earned_bg: 'bg-teal-50',    earned_bg_dark: 'bg-teal-900/30' },
-  { id: 'streak7',         icon: Flame,         label: 'В ритме заботы',       desc: 'Заходите в приложение 7 дней подряд',                                           earned_color: 'text-[#FF7100]',     earned_border: 'border-orange-200', earned_border_dark: 'border-orange-800/60', earned_bg: 'bg-orange-50',  earned_bg_dark: 'bg-orange-900/30' },
-  { id: 'zen_master',      icon: Wind,          label: 'Дзен-мастер',          desc: 'Снизьте уровень стресса на 15% и более за неделю',                              earned_color: 'text-blue-400',      earned_border: 'border-blue-200',   earned_border_dark: 'border-blue-800/60',   earned_bg: 'bg-blue-50',    earned_bg_dark: 'bg-blue-900/30' },
-  { id: 'course_finisher', icon: BookOpen,      label: 'Глубокое погружение',  desc: 'Полностью пройдите один рекомендованный курс',                                  earned_color: 'text-violet-400',    earned_border: 'border-violet-200', earned_border_dark: 'border-violet-800/60', earned_bg: 'bg-violet-50',  earned_bg_dark: 'bg-violet-900/30' },
-  { id: 'deep_convo',      icon: Heart,         label: 'Искренность',          desc: 'Откройтесь о сложных переживаниях и преодолейте их через диалог с ассистентом', earned_color: 'text-[#14B8A6]',     earned_border: 'border-teal-200',   earned_border_dark: 'border-teal-800/60',   earned_bg: 'bg-teal-50',    earned_bg_dark: 'bg-teal-900/30' },
-]
-
 export default function StudentApp() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { isDark } = useTheme()
   const { user: authUser, logout, token } = useAuth()
+
+  const FILTER_LABELS = {
+    all: t('student.filterAll'),
+    'Стресс': t('student.filterStress'),
+    'Выгорание': t('student.filterBurnout'),
+    'Эмоции': t('student.filterEmotions'),
+    'Мотивация': t('student.filterMotivation'),
+    'Тревожность': t('student.filterAnxiety'),
+  }
+
+  const ANSWER_OPTIONS = [
+    { value: 0, label: t('student.answerNo') },
+    { value: 1, label: t('student.answerMoreNo') },
+    { value: 2, label: t('student.answerMoreYes') },
+    { value: 3, label: t('student.answerYes') },
+  ]
+
+  const ACHIEVEMENTS = [
+    { id: 'first_step',      icon: Flag,          label: t('student.achievementFirstStep'),  desc: t('student.achievementFirstStepDesc'), earned_color: 'text-zharyq-orange', earned_border: 'border-orange-200', earned_border_dark: 'border-orange-800/60', earned_bg: 'bg-orange-50',  earned_bg_dark: 'bg-orange-900/30' },
+    { id: 'connected',       icon: MessageCircle, label: t('student.achievementConnected'),  desc: t('student.achievementConnectedDesc'), earned_color: 'text-zharyq-teal',   earned_border: 'border-teal-200',   earned_border_dark: 'border-teal-800/60',   earned_bg: 'bg-teal-50',    earned_bg_dark: 'bg-teal-900/30' },
+    { id: 'streak7',         icon: Flame,         label: t('student.achievementRhythm'),     desc: t('student.achievementRhythmDesc'), earned_color: 'text-[#FF7100]',     earned_border: 'border-orange-200', earned_border_dark: 'border-orange-800/60', earned_bg: 'bg-orange-50',  earned_bg_dark: 'bg-orange-900/30' },
+    { id: 'zen_master',      icon: Wind,          label: t('student.achievementZen'),        desc: t('student.achievementZenDesc'), earned_color: 'text-blue-400',      earned_border: 'border-blue-200',   earned_border_dark: 'border-blue-800/60',   earned_bg: 'bg-blue-50',    earned_bg_dark: 'bg-blue-900/30' },
+    { id: 'course_finisher', icon: BookOpen,      label: t('student.achievementDeepDive'),   desc: t('student.achievementDeepDiveDesc'), earned_color: 'text-violet-400',    earned_border: 'border-violet-200', earned_border_dark: 'border-violet-800/60', earned_bg: 'bg-violet-50',  earned_bg_dark: 'bg-violet-900/30' },
+    { id: 'deep_convo',      icon: Heart,         label: t('student.achievementSincerity'),  desc: t('student.achievementSincerityDesc'), earned_color: 'text-[#14B8A6]',     earned_border: 'border-teal-200',   earned_border_dark: 'border-teal-800/60',   earned_bg: 'bg-teal-50',    earned_bg_dark: 'bg-teal-900/30' },
+  ]
   const [view, setView] = useState('chat')
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -151,7 +162,7 @@ export default function StudentApp() {
     } else {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
       if (!SpeechRecognition) {
-        alert('Ваш браузер не поддерживает голосовой ввод. Пожалуйста, используйте Google Chrome.')
+        alert(t('student.voiceNotSupported'))
         return
       }
 
@@ -378,11 +389,11 @@ export default function StudentApp() {
   }
 
   const navItems = [
-    { id: 'chat', icon: MessageSquare, label: 'AI-Ассистент' },
-    { id: 'tests', icon: ClipboardList, label: 'Тесты' },
-    { id: 'courses', icon: BookOpen, label: 'База курсов' },
-    { id: 'analytics', icon: BarChart2, label: 'Моя аналитика' },
-    { id: 'about', icon: Info, label: 'О платформе' },
+    { id: 'chat', icon: MessageSquare, label: t('student.navChat') },
+    { id: 'tests', icon: ClipboardList, label: t('student.navTests') },
+    { id: 'courses', icon: BookOpen, label: t('student.navCourses') },
+    { id: 'analytics', icon: BarChart2, label: t('student.navAnalytics') },
+    { id: 'about', icon: Info, label: t('student.navAbout') },
   ]
 
   const sendMessage = async (text) => {
@@ -456,7 +467,7 @@ export default function StudentApp() {
 
           if (m.critical_type && m.critical_type !== 'none') {
             setAiRecommendations(prev => [
-              { id: Date.now(), title: 'Экстренная поддержка', sub: `ИИ обнаружил тревожное состояние (${m.critical_type === 'anxiety' ? 'Тревога' : 'Выгорание'}). Рекомендуем курс по управлению состоянием.`, icon: Brain, bg: 'bg-violet-50', color: 'text-violet-500', critical: true },
+              { id: Date.now(), title: t('student.emergencySupport'), sub: t('student.emergencyAIDetected', { type: m.critical_type === 'anxiety' ? t('student.emergencyTypeAnxiety') : t('student.emergencyTypeBurnout') }), icon: Brain, bg: 'bg-violet-50', color: 'text-violet-500', critical: true },
               ...prev.slice(0, 2)
             ])
           } else if (m.critical_type === 'none') {
@@ -498,7 +509,7 @@ export default function StudentApp() {
       setIsStreaming(false)
       setMessages(prev => prev.map((m, i) =>
         i === prev.length - 1 && m.role === 'ai' && m.text === ''
-          ? { ...m, text: 'Не удалось подключиться к AI-сервису. Убедитесь, что Ollama запущена.', streaming: false }
+          ? { ...m, text: t('student.aiConnectionError'), streaming: false }
           : m
       ))
     }
@@ -571,10 +582,10 @@ export default function StudentApp() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ title: editTitle || 'Новый чат' })
+        body: JSON.stringify({ title: editTitle || t('student.newChatTitle') })
       })
       if (res.ok) {
-        setChatSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: editTitle || 'Новый чат' } : s))
+        setChatSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: editTitle || t('student.newChatTitle') } : s))
       }
     } catch (e) {
       console.error(e)
@@ -617,15 +628,15 @@ export default function StudentApp() {
   const osoznLevel  = testHistory.reduce((acc, t) => acc + ((t.involvement_score || 0) + (t.control_score || 0) + (t.risk_score || 0)), 0)
 
   // metrics теперь всегда отсортирован (старые -> новые)
-  const lineLabels = metrics.length ? metrics.map(m => new Date(m.recorded_at).toLocaleDateString('ru-RU')) : ['Нет данных'];
+  const lineLabels = metrics.length ? metrics.map(m => new Date(m.recorded_at).toLocaleDateString('ru-RU')) : [t('student.noDataLabel')];
   const dataStress = metrics.length ? metrics.map(m => m.stress) : [0];
   const dataMotivation = metrics.length ? metrics.map(m => m.motivation) : [0];
 
   const lineData = {
     labels: lineLabels,
     datasets: [
-      { label: 'Стресс', data: dataStress, borderColor: '#FF7100', backgroundColor: 'rgba(255,113,0,0.1)', fill: true, tension: 0.35, pointRadius: 3, pointBorderWidth: 2, pointBackgroundColor: '#FFFFFF', pointBorderColor: '#FF7100' },
-      { label: 'Мотивация', data: dataMotivation, borderColor: '#14B8A6', backgroundColor: 'rgba(20,184,166,0.1)', fill: true, tension: 0.35, pointRadius: 3, pointBorderWidth: 2, pointBackgroundColor: '#FFFFFF', pointBorderColor: '#14B8A6' },
+      { label: t('common.stress'), data: dataStress, borderColor: '#FF7100', backgroundColor: 'rgba(255,113,0,0.1)', fill: true, tension: 0.35, pointRadius: 3, pointBorderWidth: 2, pointBackgroundColor: '#FFFFFF', pointBorderColor: '#FF7100' },
+      { label: t('common.motivation'), data: dataMotivation, borderColor: '#14B8A6', backgroundColor: 'rgba(20,184,166,0.1)', fill: true, tension: 0.35, pointRadius: 3, pointBorderWidth: 2, pointBackgroundColor: '#FFFFFF', pointBorderColor: '#14B8A6' },
     ]
   }
 
@@ -640,9 +651,9 @@ export default function StudentApp() {
 
   const latestMetric = metrics.length ? metrics[metrics.length - 1] : { stress: 0, burnout: 0, anxiety: 0, motivation: 0, emotion: 0 };
   const radarData = {
-    labels: ['Стресс', 'Выгорание', 'Тревожность', 'Мотивация', 'Эмоции'],
+    labels: [t('common.stress'), t('common.burnout'), t('common.anxiety'), t('common.motivation'), t('common.emotions')],
     datasets: [{
-      label: 'Текущее состояние',
+      label: t('landing.studentsCardProfile'),
       data: [latestMetric.stress, latestMetric.burnout, latestMetric.anxiety, latestMetric.motivation, latestMetric.emotion],
       backgroundColor: 'rgba(20,184,166,0.15)',
       borderColor: '#14B8A6',
@@ -711,6 +722,7 @@ export default function StudentApp() {
             <span className="font-semibold text-lg tracking-tight">Zharyq</span>
           </Link>
           <div className="flex items-center gap-2.5">
+            <LanguageSwitcher />
             <ThemeToggle />
             <button className="relative text-zharyq-gray hover:text-zharyq-dark transition-colors">
               <Bell size={20} />
@@ -720,10 +732,10 @@ export default function StudentApp() {
         </div>
         <button onClick={createNewSession} className="w-full bg-zharyq-orange hover:bg-zharyq-orange-hover text-white text-sm font-medium py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 mb-8">
           <Plus size={16} />
-          Новый чек-ин
+          {t('student.newSession')}
         </button>
         <div className="flex flex-col gap-1 mb-8">
-          <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">Пространство</p>
+          <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">{t('student.navAbout').split(' ')[0]}</p>
           {navItems.map(item => (
             <button
               key={item.id}
@@ -736,7 +748,7 @@ export default function StudentApp() {
           ))}
         </div>
         <div className="flex-1 overflow-y-auto pr-1">
-          <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">История</p>
+          <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">{t('student.chatHistory')}</p>
           <div className="flex flex-col gap-1">
             {chatSessions.map(session => (
               <div key={session.id} className={`group flex items-center justify-between px-3 py-2 text-sm truncate rounded-md cursor-pointer transition-colors ${currentSessionId === session.id ? 'bg-gray-100 text-zharyq-dark font-medium' : 'text-zharyq-gray hover:text-zharyq-dark hover:bg-gray-50'}`} onClick={() => loadSession(session.id)}>
@@ -771,19 +783,19 @@ export default function StudentApp() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
-                <p className="text-sm font-medium text-zharyq-dark truncate">{authUser?.username || (authUser?.role === 'employee' ? 'Сотрудник' : 'Студент')}</p>
+                <p className="text-sm font-medium text-zharyq-dark truncate">{authUser?.username || (authUser?.role === 'employee' ? t('student.profileEmployee') : t('student.profileStudent'))}</p>
                 {streakData.streak > 0 && (
                   <span className="bg-orange-100 text-zharyq-orange text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-orange-200 shrink-0">🔥 {streakData.streak}</span>
                 )}
               </div>
               {authUser?.role !== 'employee' && (
                 <p className="text-[10px] text-zharyq-gray truncate flex items-center gap-1">
-                  <GraduationCap size={12} /> {authUser?.class_name || 'Не указан'}
+                  <GraduationCap size={12} /> {authUser?.class_name || t('student.profileClassNotSet')}
                 </p>
               )}
             </div>
           </button>
-          <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors shrink-0" title="Выйти">
+          <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors shrink-0" title={t('nav.logout')}>
             <LogOut size={16} />
           </button>
         </div>
@@ -800,14 +812,14 @@ export default function StudentApp() {
             <span className="font-semibold">Zharyq</span>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => setView('about')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title="О платформе">
+            <button onClick={() => setView('about')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title={t('student.aboutTitle')}>
               <Info size={20} />
             </button>
             <button className="relative text-zharyq-gray"><Bell size={20} /><span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" /></button>
             <div className="bg-zharyq-teal-light border border-teal-200 text-zharyq-teal text-xs font-medium px-3 py-1 rounded-full flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-zharyq-teal" />В норме
+              <span className="w-1.5 h-1.5 rounded-full bg-zharyq-teal" />{t('student.statusNormal')}
             </div>
-            <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title="Выйти">
+            <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title={t('common.logout')}>
               <LogOut size={16} />
             </button>
           </div>
@@ -823,19 +835,19 @@ export default function StudentApp() {
                     <div className="w-12 h-12 rounded-2xl bg-zharyq-orange flex items-center justify-center mx-auto mb-5">
                       <Sparkles size={22} className="text-white" />
                     </div>
-                    {(() => { const g = getDynamicGreeting(metrics, testHistory); return <>
-                    <h2 className="text-2xl font-semibold mb-2">{g.timeGreeting}, {authUser?.username || (authUser?.role === 'employee' ? 'Сотрудник' : 'Студент')}</h2>
+                    {(() => { const g = getDynamicGreeting(metrics, testHistory, t); return <>
+                    <h2 className="text-2xl font-semibold mb-2">{g.timeGreeting}, {authUser?.username || (authUser?.role === 'employee' ? t('student.profileEmployee') : t('student.profileStudent'))}</h2>
                     <p className={`mb-8 text-sm ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{g.subtitle}</p>
                     </> })()}
                     <div className="flex flex-wrap justify-center gap-2">
                       <button onClick={() => sendMessage('Хочу пройти тест на уровень стресса')} className={`border text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 hover:border-zharyq-orange ${isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-white border-zharyq-border text-zharyq-dark'}`}>
-                        <FileText size={16} className="text-zharyq-gray" />Оценить стресс
+                        <FileText size={16} className="text-zharyq-gray" />{t('student.quickActionStress')}
                       </button>
                       <button onClick={() => sendMessage('Определи мои эмоции')} className={`border text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 hover:border-zharyq-orange ${isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-white border-zharyq-border text-zharyq-dark'}`}>
-                        <Camera size={16} className="text-zharyq-gray" />Скан по лицу
+                        <Camera size={16} className="text-zharyq-gray" />{t('student.quickActionEmotions')}
                       </button>
                       <button onClick={() => sendMessage('Признаки выгорания, устал')} className={`border text-sm px-4 py-2 rounded-xl transition-colors flex items-center gap-2 hover:border-zharyq-orange ${isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-white border-zharyq-border text-zharyq-dark'}`}>
-                        <Activity size={16} className="text-zharyq-gray" />Выгорание
+                        <Activity size={16} className="text-zharyq-gray" />{t('student.quickActionBurnout')}
                       </button>
                     </div>
                   </div>
@@ -856,7 +868,7 @@ export default function StudentApp() {
                           <div className="p-4">
                             <div className="flex items-center mb-3">
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-zharyq-teal bg-zharyq-teal/10">
-                                <ClipboardList size={8} />ИИ рекомендует тест
+                                <ClipboardList size={8} />{t('student.aiRecommendTest')}
                               </span>
                             </div>
                             <div className="flex items-center gap-3">
@@ -864,7 +876,7 @@ export default function StudentApp() {
                                 <ClipboardList size={20} className="text-zharyq-teal" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-[11px] font-medium text-zharyq-teal mb-0.5">Психологический тест</p>
+                                <p className="text-[11px] font-medium text-zharyq-teal mb-0.5">{t('student.psychTest')}</p>
                                 <h4 className={`text-sm font-semibold leading-snug group-hover:text-zharyq-teal transition-colors line-clamp-2 ${isDark ? 'text-zinc-100' : 'text-zharyq-dark'}`}>{msg.test.title}</h4>
                               </div>
                             </div>
@@ -874,10 +886,10 @@ export default function StudentApp() {
                           </div>
                           <div className={`px-4 pb-3 pt-2.5 border-t flex items-center justify-between ${isDark ? 'border-[#3F3F46]' : 'border-[#E5E7EB]'}`}>
                             <span className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>
-                              {msg.test.duration_minutes} мин · {msg.test.questions_count} вопросов
+                              {msg.test.duration_minutes} {t('student.testDurationMin')} · {msg.test.questions_count} {t('student.testQuestionsCount')}
                             </span>
                             <div className="flex items-center gap-1 text-xs font-semibold text-zharyq-teal group-hover:translate-x-0.5 transition-transform">
-                              Пройти тест <ChevronRight size={13} />
+                              {t('student.testTakeTest')} <ChevronRight size={13} />
                             </div>
                           </div>
                         </div>
@@ -901,7 +913,7 @@ export default function StudentApp() {
                             <div className="p-4">
                               <div className="flex items-center mb-3">
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-zharyq-orange bg-zharyq-orange/10">
-                                  <Sparkles size={8} />ИИ рекомендует
+                                  <Sparkles size={8} />{t('student.aiRecommend')}
                                 </span>
                               </div>
                               <div className="flex items-center gap-3">
@@ -915,9 +927,9 @@ export default function StudentApp() {
                               </div>
                             </div>
                             <div className={`px-4 pb-3 pt-2.5 border-t flex items-center justify-between ${isDark ? 'border-[#3F3F46]' : 'border-[#E5E7EB]'}`}>
-                              <span className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>Начать курс</span>
+                              <span className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{t('student.startCourse')}</span>
                               <div className="flex items-center gap-1 text-xs font-semibold text-zharyq-teal group-hover:translate-x-0.5 transition-transform">
-                                Перейти <ChevronRight size={13} />
+                                {t('student.goTo')} <ChevronRight size={13} />
                               </div>
                             </div>
                           </div>
@@ -991,20 +1003,20 @@ export default function StudentApp() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Расскажите, как вы себя чувствуете..."
+                    placeholder={t('student.chatInputPlaceholder')}
                     className={`w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none py-2 text-sm max-h-32 scrollbar-hide align-middle ${isDark ? 'text-zinc-100 placeholder:text-zinc-500' : 'text-zharyq-dark'}`}
                     style={{ minHeight: '40px' }}
                   />
                   <div className="flex items-center gap-1 shrink-0 h-fit">
-                    <button type="button" onClick={toggleRecording} className={`p-2 rounded-xl transition-colors flex items-center justify-center ${isRecording ? 'text-white bg-red-500 hover:bg-red-600 animate-pulse' : 'text-zharyq-gray hover:text-zharyq-orange'}`} title={isRecording ? 'Остановить запись' : 'Голосовой ввод'}><Mic size={20} /></button>
+                    <button type="button" onClick={toggleRecording} className={`p-2 rounded-xl transition-colors flex items-center justify-center ${isRecording ? 'text-white bg-red-500 hover:bg-red-600 animate-pulse' : 'text-zharyq-gray hover:text-zharyq-orange'}`} title={isRecording ? t('student.stopRecording') : t('student.startVoiceInput')}><Mic size={20} /></button>
                     {isStreaming ? (
-                      <button onClick={stopGeneration} className="p-2 text-white bg-zharyq-teal hover:bg-zharyq-teal/90 rounded-xl transition-colors flex items-center justify-center" title="Остановить генерацию"><Square size={20} /></button>
+                      <button onClick={stopGeneration} className="p-2 text-white bg-zharyq-teal hover:bg-zharyq-teal/90 rounded-xl transition-colors flex items-center justify-center" title={t('student.stopGeneration')}><Square size={20} /></button>
                     ) : (
-                      <button onClick={() => sendMessage()} className="p-2 text-white bg-zharyq-orange hover:bg-zharyq-orange-hover rounded-xl transition-colors flex items-center justify-center" title="Отправить сообщение"><ArrowUp size={20} /></button>
+                      <button onClick={() => sendMessage()} className="p-2 text-white bg-zharyq-orange hover:bg-zharyq-orange-hover rounded-xl transition-colors flex items-center justify-center" title={t('student.sendMessage')}><ArrowUp size={20} /></button>
                     )}
                   </div>
                 </div>
-                <p className={`text-center text-[11px] mt-3 hidden md:block ${isDark ? 'text-zinc-500' : 'text-zharyq-gray'}`}>Zharyq AI может допускать ошибки. Результаты тестов конфиденциальны.</p>
+                <p className={`text-center text-[11px] mt-3 hidden md:block ${isDark ? 'text-zinc-500' : 'text-zharyq-gray'}`}>{t('student.disclaimer')}</p>
               </div>
             </div>
           </>
@@ -1020,7 +1032,7 @@ export default function StudentApp() {
                 <div className="animate-fade-in-up">
                   <div className="flex items-center gap-3 mb-6">
                     <button onClick={exitTest} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
-                    <h1 className="text-xl font-semibold">Результаты теста</h1>
+                    <h1 className="text-xl font-semibold">{t('student.testResultsTitle')}</h1>
                   </div>
 
                   <div className="border border-zharyq-border rounded-2xl p-6 mb-6 bg-zharyq-bg">
@@ -1029,23 +1041,23 @@ export default function StudentApp() {
                         <CheckCircle size={24} className="text-zharyq-teal" />
                       </div>
                       <div>
-                        <h2 className="text-lg font-semibold">Тест пройден!</h2>
+                        <h2 className="text-lg font-semibold">{t('student.testPassed')}</h2>
                         <p className="text-xs text-zharyq-gray">{testResult.test_title}</p>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
                       <div className="border border-zharyq-border rounded-xl p-3 bg-white">
-                        <p className="text-[10px] text-zharyq-gray uppercase tracking-wide mb-1">Общий балл</p>
+                        <p className="text-[10px] text-zharyq-gray uppercase tracking-wide mb-1">{t('student.totalScore')}</p>
                         <p className="text-2xl font-bold text-zharyq-dark">{testResult.total_score}</p>
                         <span className={`inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full border mt-1 ${getTestLevelInfo(activeTest.slug, testResult.overall_level).style}`}>
                           {getTestLevelInfo(activeTest.slug, testResult.overall_level).label}
                         </span>
                       </div>
                       {activeTest?.slug === 'hardiness-maddi' && [
-                        { label: 'Вовлечённость', score: testResult.involvement_score, level: testResult.involvement_level, icon: Target },
-                        { label: 'Контроль', score: testResult.control_score, level: testResult.control_level, icon: Shield },
-                        { label: 'Принятие риска', score: testResult.risk_score, level: testResult.risk_level, icon: Zap },
+                        { label: t('student.hardinessInvolvement'), score: testResult.involvement_score, level: testResult.involvement_level, icon: Target },
+                        { label: t('student.hardinessControl'), score: testResult.control_score, level: testResult.control_level, icon: Shield },
+                        { label: t('student.hardinessRisk'), score: testResult.risk_score, level: testResult.risk_level, icon: Zap },
                       ].map(s => (
                         <div key={s.label} className="border border-zharyq-border rounded-xl p-3 bg-white">
                           <p className="text-[10px] text-zharyq-gray uppercase tracking-wide mb-1 flex items-center gap-1">
@@ -1061,7 +1073,7 @@ export default function StudentApp() {
 
                     {/* Interpretation */}
                     <div className="border border-zharyq-border rounded-xl p-4 bg-white mb-4">
-                      <h3 className="text-sm font-semibold mb-2">Интерпретация</h3>
+                      <h3 className="text-sm font-semibold mb-2">{t('student.interpretationTitle')}</h3>
                       <p className="text-xs text-zharyq-gray leading-relaxed">
                         {getTestInterpretation(activeTest?.slug, testResult.overall_level)}
                       </p>
@@ -1073,7 +1085,7 @@ export default function StudentApp() {
                         const recs = JSON.parse(testResult.recommendations)
                         if (recs.length > 0) return (
                           <div>
-                            <h3 className="text-sm font-semibold mb-3">Рекомендованные курсы</h3>
+                            <h3 className="text-sm font-semibold mb-3">{t('student.recommendedCourses')}</h3>
                             <div className="flex flex-col gap-2">
                               {recs.map(r => (
                                 <div key={r.id} onClick={() => navigate(`/course/${r.id}`)} className="border border-zharyq-border rounded-xl p-3 bg-white flex items-center gap-3 hover:border-zharyq-orange transition-colors cursor-pointer group">
@@ -1096,7 +1108,7 @@ export default function StudentApp() {
                   </div>
 
                   <button onClick={exitTest} className="w-full py-3 rounded-xl text-white text-sm font-semibold transition-colors" style={{ background: 'var(--color-accent)' }}>
-                    Вернуться к тестам
+                    {t('student.testBack')}
                   </button>
                 </div>
               )}
@@ -1108,7 +1120,7 @@ export default function StudentApp() {
                     <button onClick={exitTest} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
                     <div className="flex-1">
                       <h1 className="text-lg font-semibold">{activeTest.title}</h1>
-                      <p className="text-xs text-zharyq-gray">Вопрос {currentQ + 1} из {activeTest.questions.length}</p>
+                      <p className="text-xs text-zharyq-gray">{t('student.testQuestionProgress', { num: currentQ + 1, total: activeTest.questions.length })}</p>
                     </div>
                   </div>
 
@@ -1120,7 +1132,7 @@ export default function StudentApp() {
                   {/* Question */}
                   {activeTest.questions[currentQ] && (
                     <div className="border border-zharyq-border rounded-2xl p-6 mb-6 bg-zharyq-bg">
-                      <p className="text-xs text-zharyq-gray mb-2">Вопрос {activeTest.questions[currentQ].position}</p>
+                      <p className="text-xs text-zharyq-gray mb-2">{t('student.testQuestionNum', { num: activeTest.questions[currentQ].position })}</p>
                       <p className="text-base font-medium mb-6 leading-relaxed">{activeTest.questions[currentQ].text}</p>
 
                       <div className="flex flex-col gap-2">
@@ -1152,7 +1164,7 @@ export default function StudentApp() {
                       disabled={currentQ === 0}
                       className="flex items-center gap-1 px-4 py-2.5 border border-zharyq-border rounded-xl text-sm text-zharyq-gray hover:text-zharyq-dark hover:border-zharyq-gray disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                     >
-                      <ChevronLeft size={16} /> Назад
+                      <ChevronLeft size={16} /> {t('student.testPrev')}
                     </button>
                     <div className="flex-1" />
                     {currentQ < activeTest.questions.length - 1 ? (
@@ -1162,7 +1174,7 @@ export default function StudentApp() {
                         className="flex items-center gap-1 px-6 py-2.5 rounded-xl text-sm font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                         style={{ background: 'var(--color-accent)' }}
                       >
-                        Далее <ChevronRight size={16} />
+                        {t('student.testNext')} <ChevronRight size={16} />
                       </button>
                     ) : (
                       <button
@@ -1171,7 +1183,7 @@ export default function StudentApp() {
                         className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                         style={{ background: 'var(--color-accent)' }}
                       >
-                        {testSubmitting ? 'Обработка...' : 'Завершить тест'}
+                        {testSubmitting ? t('student.testProcessing') : t('student.testFinish')}
                         <CheckCircle size={16} />
                       </button>
                     )}
@@ -1203,31 +1215,31 @@ export default function StudentApp() {
                 <>
                   <div className="flex items-center gap-3 mb-8">
                     <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
-                    <h1 className="text-xl font-semibold">Доступные тесты</h1>
+                    <h1 className="text-xl font-semibold">{t('student.testAvailableTitle')}</h1>
                   </div>
 
                   {testLoading ? (
-                    <div className="text-center py-16 text-zharyq-gray text-sm">Загрузка...</div>
+                    <div className="text-center py-16 text-zharyq-gray text-sm">{t('student.testLoading')}</div>
                   ) : (
                     <>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                        {availableTests.map(t => (
-                          <div key={t.id} className="border border-zharyq-border rounded-2xl p-5 hover:border-zharyq-gray transition-colors cursor-pointer group flex flex-col h-full">
+                        {availableTests.map(test => (
+                          <div key={test.id} className="border border-zharyq-border rounded-2xl p-5 hover:border-zharyq-gray transition-colors cursor-pointer group flex flex-col h-full">
                             <div className="flex items-start gap-3 mb-4">
                               <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
                                 <Zap size={20} className="text-zharyq-orange" />
                               </div>
                               <div>
-                                <h4 className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">{t.title}</h4>
-                                <p className="text-xs text-zharyq-gray mt-1 leading-relaxed">{t.description}</p>
+                                <h4 className="text-sm font-semibold group-hover:text-zharyq-orange transition-colors">{test.title}</h4>
+                                <p className="text-xs text-zharyq-gray mt-1 leading-relaxed">{test.description}</p>
                               </div>
                             </div>
                             <div className="mt-auto flex items-center justify-between text-[11px] text-zharyq-gray border-t border-zharyq-border pt-3">
                               <div className="flex items-center gap-3">
-                                <span className="flex items-center gap-1"><Clock size={12} /> {t.duration_minutes} мин</span>
-                                <span className="flex items-center gap-1"><Layers size={12} /> {t.questions_count} вопросов</span>
+                                <span className="flex items-center gap-1"><Clock size={12} /> {test.duration_minutes} {t('student.testDurationMin')}</span>
+                                <span className="flex items-center gap-1"><Layers size={12} /> {test.questions_count} {t('student.testQuestionsCount')}</span>
                               </div>
-                              <button onClick={() => startTest(t.id)} className="text-zharyq-orange font-semibold hover:underline">Пройти</button>
+                              <button onClick={() => startTest(test.id)} className="text-zharyq-orange font-semibold hover:underline">{t('student.testStart')}</button>
                             </div>
                           </div>
                         ))}
@@ -1236,16 +1248,16 @@ export default function StudentApp() {
                       {/* Test history */}
                       <div className="border border-zharyq-border rounded-2xl overflow-hidden">
                         <div className="px-5 py-4 border-b border-zharyq-border">
-                          <h2 className="text-sm font-semibold">История прохождений</h2>
+                          <h2 className="text-sm font-semibold">{t('student.testHistoryTitle')}</h2>
                         </div>
                         {testHistory.length === 0 ? (
-                          <p className="px-5 py-6 text-sm text-center text-zharyq-gray">Вы ещё не прошли ни одного теста</p>
+                          <p className="px-5 py-6 text-sm text-center text-zharyq-gray">{t('student.testHistoryEmpty')}</p>
                         ) : (
                           <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="border-b border-zharyq-border bg-zharyq-bg/50 text-zharyq-dark">
-                                  {['Дата', 'Тест', 'Балл', 'Уровень'].map(h => (
+                                  {[t('student.testHistoryColDate'), t('student.testHistoryColTest'), t('student.testHistoryColScore'), t('student.testHistoryColLevel')].map(h => (
                                     <th key={h} className="text-left text-[11px] font-semibold text-zharyq-gray uppercase tracking-wide px-5 py-3">{h}</th>
                                   ))}
                                 </tr>
@@ -1283,11 +1295,11 @@ export default function StudentApp() {
             <div className="max-w-3xl mx-auto">
               <div className="flex items-center gap-3 mb-6">
                 <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
-                <h1 className="text-xl font-semibold">База курсов</h1>
+                <h1 className="text-xl font-semibold">{t('student.coursesTitle')}</h1>
               </div>
               <div className="relative mb-4">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
-                <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию или теме..." className="w-full text-zharyq-dark border border-zharyq-border rounded-xl pl-9 pr-4 py-2.5 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all" />
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('student.coursesSearchPlaceholder')} className="w-full text-zharyq-dark border border-zharyq-border rounded-xl pl-9 pr-4 py-2.5 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all" />
               </div>
               <div className="flex flex-wrap gap-2 mb-8">
                 {FILTERS.map(f => (
@@ -1298,11 +1310,11 @@ export default function StudentApp() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {coursesLoading ? (
-                  <div className="col-span-2 text-center py-16 text-zharyq-gray text-sm">Загрузка...</div>
+                  <div className="col-span-2 text-center py-16 text-zharyq-gray text-sm">{t('student.coursesLoading')}</div>
                 ) : filteredCourses.length === 0 ? (
                   <div className="col-span-2 text-center py-16 text-zharyq-gray">
                     <SearchX size={32} className="mx-auto mb-3 opacity-40" />
-                    <p className="text-sm">Ничего не найдено</p>
+                    <p className="text-sm">{t('student.coursesEmpty')}</p>
                   </div>
                 ) : filteredCourses.map(c => {
                   const meta = CATEGORY_META[c.category] || DEFAULT_META
@@ -1318,13 +1330,13 @@ export default function StudentApp() {
                         <p className="text-xs text-zharyq-gray mb-3">{c.description}</p>
                         <div className="flex items-center gap-3 text-[11px] text-zharyq-gray mb-3">
                           <span className="flex items-center gap-1"><Video size={12} /> {c.content_type}</span>
-                          <span className="flex items-center gap-1"><Clock size={12} /> {c.duration_minutes} мин</span>
-                          <span className="flex items-center gap-1"><Layers size={12} /> {c.total_lessons} уроков</span>
+                          <span className="flex items-center gap-1"><Clock size={12} /> {c.duration_minutes} {t('student.courseMinutesLabel')}</span>
+                          <span className="flex items-center gap-1"><Layers size={12} /> {c.total_lessons} {t('student.courseLessonsLabel')}</span>
                         </div>
                         <div className="w-full bg-gray-100 rounded-full h-1 mb-1">
                           <div className={`${meta.progressColor} h-1 rounded-full`} style={{ width: '0%' }} />
                         </div>
-                        <p className="text-[10px] text-zharyq-gray text-right">Не начато</p>
+                        <p className="text-[10px] text-zharyq-gray text-right">{t('student.courseNotStarted')}</p>
                       </div>
                     </div>
                   )
@@ -1341,30 +1353,30 @@ export default function StudentApp() {
               <div className="flex items-center gap-3 mb-8">
                 <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
                 <div>
-                  <h1 className="text-xl font-semibold">Моя аналитика</h1>
-                  <p className="text-xs text-zharyq-gray mt-0.5">Личные показатели</p>
+                  <h1 className="text-xl font-semibold">{t('student.navAnalytics')}</h1>
+                  <p className="text-xs text-zharyq-gray mt-0.5">{t('student.analyticsPersonalTitle')}</p>
                 </div>
               </div>
               <div className="border border-zharyq-border rounded-2xl p-5 mb-6 bg-zharyq-bg">
                 <div className="flex items-center justify-between mb-1">
-                  <h2 className="text-sm font-semibold">Стресс и Мотивация</h2>
+                  <h2 className="text-sm font-semibold">{t('student.analyticsStressMotivation')}</h2>
                   <div className="flex items-center gap-4 text-[11px] text-zharyq-gray">
-                    <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 rounded-full bg-zharyq-orange inline-block" />Стресс</span>
-                    <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 rounded-full bg-zharyq-teal inline-block" />Мотивация</span>
+                    <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 rounded-full bg-zharyq-orange inline-block" />{t('student.legendStress')}</span>
+                    <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 rounded-full bg-zharyq-teal inline-block" />{t('student.legendMotivation')}</span>
                   </div>
                 </div>
-                <p className="text-xs text-zharyq-gray mb-4">Изменение показателей за период</p>
+                <p className="text-xs text-zharyq-gray mb-4">{t('student.analyticsChange')}</p>
                 <div style={{ height: '200px' }}>
                   <Line data={lineData} options={lineOptions} />
                 </div>
               </div>
               <div className={`border rounded-2xl p-5 mb-6 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-zharyq-bg border-zharyq-border'}`}>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : ''}`}>Достижения</h2>
-                  <span className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{earnedCount} / {ACHIEVEMENTS_DEF.length} разблокировано</span>
+                  <h2 className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : ''}`}>{t('student.achievementsTitle')}</h2>
+                  <span className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{t('student.achievementsUnlocked', { count: earnedCount, total: ACHIEVEMENTS.length })}</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {ACHIEVEMENTS_DEF.map((ach) => {
+                  {ACHIEVEMENTS.map((ach) => {
                     const earned = earnedMap[ach.id]
                     return (
                       <div key={ach.id} className={`relative group flex items-start gap-3 border rounded-xl p-3 transition-all ${
@@ -1381,7 +1393,7 @@ export default function StudentApp() {
                         </div>
                         {!earned && (
                           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-[#1F2937] text-white text-[10px] leading-snug rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 text-center shadow-lg">
-                            Выполните условие, чтобы разблокировать это достижение
+                            {t('student.achievementLocked')}
                             <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#1F2937]" />
                           </div>
                         )}
@@ -1399,7 +1411,7 @@ export default function StudentApp() {
             <div className="max-w-3xl mx-auto">
               <div className="flex items-center gap-3 mb-8">
                 <button onClick={() => setView('chat')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors"><ArrowLeft size={20} /></button>
-                <h1 className="text-2xl font-semibold">О платформе</h1>
+                <h1 className="text-2xl font-semibold">{t('student.aboutTitle')}</h1>
               </div>
 
               <div className="bg-gradient-to-br from-zharyq-teal/10 to-blue-500/10 rounded-3xl p-8 mb-8 border border-zharyq-teal/20 relative overflow-hidden">
@@ -1408,20 +1420,20 @@ export default function StudentApp() {
                   <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center mb-6 border border-zharyq-border">
                     <Sparkles size={32} className="text-zharyq-orange" />
                   </div>
-                  <h2 className="text-2xl font-bold mb-3">Что такое Zharyq?</h2>
+                  <h2 className="text-2xl font-bold mb-3">{t('student.aboutWhatTitle')}</h2>
                   <p className="text-sm text-zharyq-gray leading-relaxed max-w-2xl">
-                    Zharyq — это инновационная платформа психологической поддержки и мониторинга состояния учащихся. Наша цель — создать безопасную и поддерживающую среду для каждого, предупреждать эмоциональное выгорание и помогать в развитии жизнестойкости.
+                    {t('student.aboutWhatDesc')}
                   </p>
                 </div>
               </div>
 
-              <h3 className="text-lg font-semibold mb-6">Ключевые возможности</h3>
+              <h3 className="text-lg font-semibold mb-6">{t('student.aboutFeaturesTitle')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
                 {[
-                  { icon: Brain, title: 'AI-Ассистент', desc: 'Круглосуточный интеллектуальный собеседник, готовый выслушать, проанализировать ваше состояние и дать первичные рекомендации.', color: 'text-violet-500', bg: 'bg-violet-50' },
-                  { icon: Shield, title: 'Конфиденциальность', desc: 'Все ваши тесты и переписки надежно защищены. Психолог видит только обобщенные метрики для оказания помощи.', color: 'text-green-500', bg: 'bg-green-50' },
-                  { icon: BookOpen, title: 'База курсов', desc: 'Персонально подобранные материалы: видео, статьи и упражнения, направленные на развитие эмоционального интеллекта.', color: 'text-blue-500', bg: 'bg-blue-50' },
-                  { icon: Activity, title: 'Мониторинг прогресса', desc: 'Наглядные дашборды, показывающие динамику вашего состояния, уровень стресса и мотивации во времени.', color: 'text-zharyq-orange', bg: 'bg-orange-50' },
+                  { icon: Brain, title: t('student.aboutFeatureAITitle'), desc: t('student.aboutFeatureAIDesc'), color: 'text-violet-500', bg: 'bg-violet-50' },
+                  { icon: Shield, title: t('student.aboutFeaturePrivacyTitle'), desc: t('student.aboutFeaturePrivacyDesc'), color: 'text-green-500', bg: 'bg-green-50' },
+                  { icon: BookOpen, title: t('student.aboutFeatureCoursesTitle'), desc: t('student.aboutFeatureCoursesDesc'), color: 'text-blue-500', bg: 'bg-blue-50' },
+                  { icon: Activity, title: t('student.aboutFeatureProgressTitle'), desc: t('student.aboutFeatureProgressDesc'), color: 'text-zharyq-orange', bg: 'bg-orange-50' },
                 ].map((feature, i) => (
                   <div key={i} className="border border-zharyq-border rounded-2xl p-5 bg-white hover:border-zharyq-gray transition-colors">
                     <div className={`w-12 h-12 rounded-xl ${feature.bg} flex items-center justify-center mb-4`}>
@@ -1435,12 +1447,12 @@ export default function StudentApp() {
 
               <div className="border border-zharyq-border rounded-2xl p-6 bg-zharyq-bg flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
-                  <h3 className="font-semibold text-sm mb-1">Версия платформы</h3>
+                  <h3 className="font-semibold text-sm mb-1">{t('student.aboutVersionLabel')}</h3>
                   <p className="text-xs text-zharyq-gray">v1.2.0-beta</p>
                 </div>
                 <div className="text-xs text-zharyq-gray max-w-sm text-center sm:text-right">
-                  Разработано с заботой о психологическом благополучии.
-                  <br />© 2026 Команда Zharyq. Все права защищены.
+                  {t('student.aboutCopyright')}
+                  <br />{t('student.aboutCopyrightTeam')}
                 </div>
               </div>
             </div>
@@ -1460,7 +1472,7 @@ export default function StudentApp() {
                   <button onClick={() => setView('chat')} className={`transition-colors ${isDark ? 'text-zinc-400 hover:text-zinc-100' : 'text-zharyq-gray hover:text-zharyq-dark'}`}>
                     <ArrowLeft size={20} strokeWidth={1.5} />
                   </button>
-                  <h1 className={`text-2xl font-semibold ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>Профиль</h1>
+                  <h1 className={`text-2xl font-semibold ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>{t('student.profileTitle')}</h1>
                 </div>
 
                 {/* User info */}
@@ -1480,7 +1492,7 @@ export default function StudentApp() {
                           onClick={() => avatarFileInputRef.current?.click()}
                           className="absolute -top-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center"
                           style={{ backgroundColor: 'var(--color-accent)', border: '2px solid var(--color-bg)' }}
-                          title="Изменить фото"
+                          title={t('student.changePhoto')}
                         >
                           <Pencil size={11} strokeWidth={2} color="#fff" />
                         </button>
@@ -1489,15 +1501,15 @@ export default function StudentApp() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h2 className={`text-2xl font-semibold mb-0.5 ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>
-                        {authUser?.username || (authUser?.role === 'employee' ? 'Сотрудник' : 'Студент')}
+                        {authUser?.username || (authUser?.role === 'employee' ? t('student.profileEmployee') : t('student.profileStudent'))}
                       </h2>
                       {authUser?.role !== 'employee' && (
                         <p className={`text-sm mb-2.5 ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>
-                          {authUser?.class_name || 'Класс не указан'}
+                          {authUser?.class_name || t('student.profileClassNotSpecified')}
                         </p>
                       )}
                       <span className={`inline-flex items-center text-xs font-medium px-3 py-0.5 rounded-full border ${isDark ? 'border-[#2DD4BF] text-[#2DD4BF]' : 'border-[#14B8A6] text-[#14B8A6]'}`}>
-                        {authUser?.role === 'employee' ? 'Сотрудник' : 'Студент'}
+                        {authUser?.role === 'employee' ? t('student.profileEmployee') : t('student.profileStudent')}
                       </span>
                     </div>
                   </div>
@@ -1507,18 +1519,18 @@ export default function StudentApp() {
                 <div className={`h-px my-8 ${isDark ? 'bg-[#3F3F46]' : 'bg-[#E5E7EB]'}`} />
 
                 {/* Gamification */}
-                <h2 className={`text-lg font-medium mb-5 ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>Достижения и прогресс</h2>
+                <h2 className={`text-lg font-medium mb-5 ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>{t('student.profileGamificationTitle')}</h2>
 
                 {/* Streak */}
                 <div className={`border rounded-2xl p-5 mb-4 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-[#F9FAFB] border-[#E5E7EB]'}`}>
                   <div className="flex items-center gap-2.5 mb-5">
                     <Flame size={20} strokeWidth={1.5} className="text-zharyq-orange" />
                     <span className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>
-                      {streakData.streak} {streakData.streak === 1 ? 'день' : streakData.streak >= 2 && streakData.streak <= 4 ? 'дня' : 'дней'} заботы о себе
+                      {streakData.streak} {streakData.streak === 1 ? t('student.profileStreakDay1') : streakData.streak >= 2 && streakData.streak <= 4 ? t('student.profileStreakDay2to4') : t('student.profileStreakDay5plus')} {t('student.profileStreakSelfCare')}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day, i) => {
+                    {[t('student.weekDayMon'), t('student.weekDayTue'), t('student.weekDayWed'), t('student.weekDayThu'), t('student.weekDayFri'), t('student.weekDaySat'), t('student.weekDaySun')].map((day, i) => {
                       const isToday = i === todayMon
                       const active = streakData.week_days[i]
                       return (
@@ -1547,22 +1559,22 @@ export default function StudentApp() {
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div className={`border rounded-2xl p-4 flex flex-col items-center justify-center gap-1 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-[#F9FAFB] border-[#E5E7EB]'}`}>
                     <span className={`text-2xl font-bold ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>{osoznLevel}</span>
-                    <span className={`text-[10px] text-center leading-tight ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>Уровень осознанности</span>
+                    <span className={`text-[10px] text-center leading-tight ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>{t('student.profileAwarenessLevel')}</span>
                   </div>
                   <div className={`border rounded-2xl p-4 flex flex-col items-center justify-center gap-1 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-[#F9FAFB] border-[#E5E7EB]'}`}>
                     <span className="text-2xl font-bold text-zharyq-orange">{xpPoints} XP</span>
-                    <span className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>Опыт</span>
+                    <span className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>{t('student.profileExperience')}</span>
                   </div>
                 </div>
 
                 {/* Achievements grid */}
                 <div className={`border rounded-2xl p-5 ${isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-[#F9FAFB] border-[#E5E7EB]'}`}>
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>Достижения</h3>
-                    <span className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>{earnedCount} / {ACHIEVEMENTS_DEF.length}</span>
+                    <h3 className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>{t('student.profileAchievementsTitle')}</h3>
+                    <span className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-[#6B7280]'}`}>{earnedCount} / {ACHIEVEMENTS.length}</span>
                   </div>
                   <div className="grid grid-cols-3 gap-3">
-                    {ACHIEVEMENTS_DEF.map((ach) => {
+                    {ACHIEVEMENTS.map((ach) => {
                       const earned = earnedMap[ach.id]
                       return (
                         <div key={ach.id} className="relative group">
@@ -1599,11 +1611,11 @@ export default function StudentApp() {
                 <div className={`h-px my-8 ${isDark ? 'bg-[#3F3F46]' : 'bg-[#E5E7EB]'}`} />
 
                 {/* Privacy settings */}
-                <h2 className={`text-lg font-medium mb-5 ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>Настройки приватности</h2>
+                <h2 className={`text-lg font-medium mb-5 ${isDark ? 'text-zinc-100' : 'text-[#1F2937]'}`}>{t('student.profilePrivacyTitle')}</h2>
                 <div className={`border rounded-2xl ${isDark ? 'border-[#3F3F46]' : 'border-[#E5E7EB]'}`}>
                   {[
-                    { key: 'personalized', label: 'Персонализированный режим', desc: 'Психолог может видеть ваше имя при обращении за помощью' },
-                    { key: 'encryption', label: 'Шифрование истории', desc: 'Локальное скрытие истории сеансов чата' },
+                    { key: 'personalized', label: t('student.profilePrivacyPersonalized'), desc: t('student.profilePrivacyPersonalizedDesc') },
+                    { key: 'encryption', label: t('student.profilePrivacyEncryption'), desc: t('student.profilePrivacyEncryptionDesc') },
                   ].map((s, idx, arr) => (
                     <div
                       key={s.key}
@@ -1652,8 +1664,8 @@ export default function StudentApp() {
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6 flex items-start gap-3">
               <span className="flex w-3 h-3 rounded-full bg-green-500 mt-0.5 shrink-0" />
               <div>
-                <h3 className="text-sm font-semibold text-green-700 mb-1">Отличный результат!</h3>
-                <p className="text-xs text-green-600/80 leading-relaxed">Ваш уровень жизнестойкости высокий. Вы хорошо справляетесь со стрессом. Продолжайте в том же духе!</p>
+                <h3 className="text-sm font-semibold text-green-700 mb-1">{t('student.hardinessHigh')}</h3>
+                <p className="text-xs text-green-600/80 leading-relaxed">{t('student.hardinessHighDesc')}</p>
               </div>
             </div>
           )
@@ -1661,8 +1673,8 @@ export default function StudentApp() {
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-start gap-3">
               <span className="flex w-3 h-3 rounded-full bg-amber-500 mt-0.5 shrink-0" />
               <div>
-                <h3 className="text-sm font-semibold text-amber-700 mb-1">Можно улучшить</h3>
-                <p className="text-xs text-amber-600/80 leading-relaxed">У вас средний уровень жизнестойкости. Рекомендуем пройти курсы для укрепления стрессоустойчивости.</p>
+                <h3 className="text-sm font-semibold text-amber-700 mb-1">{t('student.hardinessMedium')}</h3>
+                <p className="text-xs text-amber-600/80 leading-relaxed">{t('student.hardinessMediumDesc')}</p>
               </div>
             </div>
           )
@@ -1670,8 +1682,8 @@ export default function StudentApp() {
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start gap-3">
               <span className="flex w-3 h-3 rounded-full bg-red-500 mt-0.5 shrink-0" />
               <div>
-                <h3 className="text-sm font-semibold text-red-700 mb-1">Требуется внимание</h3>
-                <p className="text-xs text-red-600/80 leading-relaxed">Ваш уровень жизнестойкости ниже среднего. Обратитесь к психологу и пройдите рекомендованные курсы.</p>
+                <h3 className="text-sm font-semibold text-red-700 mb-1">{t('student.hardinessLow')}</h3>
+                <p className="text-xs text-red-600/80 leading-relaxed">{t('student.hardinessLowDesc')}</p>
               </div>
             </div>
           )
@@ -1680,7 +1692,7 @@ export default function StudentApp() {
         {/* Psychological profile radar */}
         <div className="mb-8 text-zharyq-dark">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold">Психологический профиль</h3>
+            <h3 className="text-sm font-semibold">{t('student.psyProfileTitle')}</h3>
             <span className="text-[10px] text-zharyq-gray uppercase bg-gray-100 px-2 py-1 rounded">Live</span>
           </div>
           <div className="w-full aspect-square">
@@ -1694,9 +1706,9 @@ export default function StudentApp() {
               return (
                 <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                   {[
-                    { label: 'Вовлечённость', value: hardinessTest.involvement_score, level: hardinessTest.involvement_level },
-                    { label: 'Контроль', value: hardinessTest.control_score, level: hardinessTest.control_level },
-                    { label: 'Принятие риска', value: hardinessTest.risk_score, level: hardinessTest.risk_level },
+                    { label: t('student.hardinessInvolvement'), value: hardinessTest.involvement_score, level: hardinessTest.involvement_level },
+                    { label: t('student.hardinessControl'), value: hardinessTest.control_score, level: hardinessTest.control_level },
+                    { label: t('student.hardinessRisk'), value: hardinessTest.risk_score, level: hardinessTest.risk_level },
                   ].map(s => (
                     <div key={s.label} className="border border-zharyq-border rounded-lg p-2">
                       <p className="text-[9px] text-zharyq-gray">{s.label}</p>
@@ -1715,7 +1727,7 @@ export default function StudentApp() {
           {/* New test results fields below the profile but above AI recs */}
           {testHistory.filter(t => t.test_slug !== 'hardiness-maddi').length > 0 && (
             <div className="mt-6 mb-6">
-              <h4 className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Результаты других тестов</h4>
+              <h4 className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">{t('student.otherTestResults')}</h4>
               <div className="space-y-2">
                 {Object.values(
                   testHistory
@@ -1728,7 +1740,7 @@ export default function StudentApp() {
                   <div key={test.id} className="bg-zharyq-bg border border-zharyq-border rounded-xl p-3 flex justify-between items-center transition-opacity hover:opacity-90">
                     <div className="pr-4">
                       <p className="text-xs font-semibold text-zharyq-dark mb-0.5">{test.test_title}</p>
-                      <p className="text-[10px] font-medium text-zharyq-gray">Результат: {test.total_score} баллов</p>
+                      <p className="text-[10px] font-medium text-zharyq-gray">{t('student.testResultScore', { score: test.total_score })}</p>
                     </div>
                     <span className={`text-[10px] whitespace-nowrap uppercase font-bold px-2.5 py-1 rounded-full border shrink-0 ${getTestLevelInfo(test.test_slug, test.overall_level).style}`}>
                       {getTestLevelInfo(test.test_slug, test.overall_level).label}
@@ -1742,13 +1754,13 @@ export default function StudentApp() {
 
         {/* Dynamic recommendations from test results */}
         <div className="text-zharyq-dark">
-          <h3 className="text-sm font-semibold mb-4">Рекомендации для вас</h3>
+          <h3 className="text-sm font-semibold mb-4">{t('student.recommendationsTitle')}</h3>
           {aiRecommendations.length > 0 && (
             <div className="mb-4">
               {aiRecommendations.map((r) => (
                 <div key={r.id} onClick={() => r.courseId && navigate(`/course/${r.courseId}`)} className="border border-zharyq-teal bg-zharyq-bg rounded-xl p-4 mb-3 hover:border-zharyq-teal/80 transition-colors cursor-pointer group relative overflow-hidden animate-fade-in-up">
                   <div className="absolute top-0 right-0 bg-[#0d9488] text-white text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-bl-lg">
-                    ИИ Рекомендует
+                    {t('student.aiRecommends')}
                   </div>
                   <div className="flex items-start gap-3 mb-2 mt-1">
                     <div className={`w-10 h-10 rounded-lg ${r.bg} flex items-center justify-center shrink-0`}>
@@ -1790,9 +1802,9 @@ export default function StudentApp() {
             return (
               <div className="border border-dashed border-zharyq-border rounded-xl p-4 text-center">
                 <ClipboardList size={24} className="mx-auto mb-2 text-zharyq-gray opacity-40" />
-                <p className="text-xs text-zharyq-gray">Пройдите тест, чтобы получить персональные рекомендации</p>
+                <p className="text-xs text-zharyq-gray">{t('student.takeTestForRecs')}</p>
                 <button onClick={() => setView('tests')} className="text-xs font-semibold text-zharyq-orange mt-2 hover:underline">
-                  Перейти к тестам →
+                  {t('student.goToTests')}
                 </button>
               </div>
             )
@@ -1803,10 +1815,10 @@ export default function StudentApp() {
       {/* MOBILE BOTTOM NAV */}
       <nav className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-zharyq-border pt-2 pb-4 px-4 flex justify-between z-20">
         {[
-          { id: 'chat', icon: MessageSquare, label: 'Чат' },
-          { id: 'tests', icon: ClipboardList, label: 'Тесты' },
-          { id: 'analytics', icon: BarChart2, label: 'Аналитика' },
-          { id: 'courses', icon: BookOpen, label: 'Курсы' },
+          { id: 'chat', icon: MessageSquare, label: t('student.mobileNavChat') },
+          { id: 'tests', icon: ClipboardList, label: t('student.mobileNavTests') },
+          { id: 'analytics', icon: BarChart2, label: t('student.mobileNavAnalytics') },
+          { id: 'courses', icon: BookOpen, label: t('student.mobileNavCourses') },
         ].map(item => (
           <button key={item.id} onClick={() => setView(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${view === item.id ? 'text-zharyq-orange' : 'text-zharyq-gray'}`}>
             <item.icon size={20} />
@@ -1823,22 +1835,22 @@ export default function StudentApp() {
               <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mb-4">
                 <Trash2 size={24} className="text-red-500" />
               </div>
-              <h3 className="text-lg font-semibold text-zharyq-dark mb-2">Удалить этот чат?</h3>
+              <h3 className="text-lg font-semibold text-zharyq-dark mb-2">{t('student.deleteChatTitle')}</h3>
               <p className="text-sm text-zharyq-gray mb-6 leading-relaxed">
-                Вы собираетесь удалить чат «<span className="font-medium text-zharyq-dark">{deleteConfirmSession.title}</span>». Это действие необратимо и вся история сообщений будет стерта.
+                {t('student.deleteChatMsg', { title: '' })}<span className="font-medium text-zharyq-dark">{deleteConfirmSession.title}</span>{t('student.deleteChatMsgEnd')}
               </p>
               <div className="flex gap-3 w-full">
-                <button 
+                <button
                   onClick={() => setDeleteConfirmSession(null)}
                   className="flex-1 px-4 py-2.5 rounded-xl border border-zharyq-border text-zharyq-dark text-sm font-medium hover:bg-gray-50 transition-colors"
                 >
-                  Отмена
+                  {t('student.cancel')}
                 </button>
-                <button 
+                <button
                   onClick={confirmDelete}
                   className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors shadow-sm shadow-red-200"
                 >
-                  Удалить
+                  {t('student.delete')}
                 </button>
               </div>
             </div>

@@ -12,7 +12,9 @@ import {
   Filler, Tooltip, Legend
 } from 'chart.js'
 import ThemeToggle from '../components/ThemeToggle'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 import { useTheme } from '../context/ThemeContext'
+import { useTranslation } from 'react-i18next'
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
 
@@ -21,11 +23,11 @@ function getChartTextColor() {
 }
 
 const TABS = ['students', 'psychologists', 'management']
-const TAB_LABELS = { students: 'Ученики / Сотрудники', psychologists: 'Психологи', management: 'Руководство' }
 
 const ROLE_ROUTES = { student: '/app', employee: '/app', psychologist: '/psychologist', director: '/director' }
 
 export default function Landing() {
+  const { t } = useTranslation()
   const { isDark } = useTheme()
   const { login, register } = useAuth()
   const navigate = useNavigate()
@@ -43,6 +45,12 @@ export default function Landing() {
   const [showRegPass, setShowRegPass] = useState(false)
   const [regError, setRegError] = useState('')
   const [regLoading, setRegLoading] = useState(false)
+
+  const TAB_LABELS = {
+    students: t('landing.tabStudents'),
+    psychologists: t('landing.tabPsychologists'),
+    management: t('landing.tabManagement'),
+  }
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -62,7 +70,7 @@ export default function Landing() {
   const handleRegister = async (e) => {
     e.preventDefault()
     setRegError('')
-    if (regForm.password.length < 6) { setRegError('Пароль должен быть не менее 6 символов'); return }
+    if (regForm.password.length < 6) { setRegError(t('auth.passwordMinLength')); return }
     setRegLoading(true)
     try {
       const payload = { ...regForm }
@@ -111,9 +119,15 @@ export default function Landing() {
   }, [])
 
   const radarData = {
-    labels: ['Стресс', 'Выгорание', 'Тревожность', 'Мотивация', 'Эмоции'],
+    labels: [
+      t('landing.radarStress'),
+      t('landing.radarBurnout'),
+      t('landing.radarAnxiety'),
+      t('landing.radarMotivation'),
+      t('landing.radarEmotions'),
+    ],
     datasets: [{
-      label: 'Профиль',
+      label: t('landing.studentsCardProfile'),
       data: [35, 25, 40, 85, 75],
       backgroundColor: 'rgba(20,184,166,0.15)',
       borderColor: '#14B8A6',
@@ -152,14 +166,15 @@ export default function Landing() {
             <span className="font-semibold text-lg tracking-tight">Zharyq</span>
           </a>
           <nav className="hidden md:flex items-center gap-6">
-            <a href="#about" className="text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors">О платформе</a>
-            <a href="#features" className="text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors">Возможности</a>
-            <a href="#roles" className="text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors">Для кого</a>
+            <a href="#about" className="text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors">{t('nav.about')}</a>
+            <a href="#features" className="text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors">{t('nav.features')}</a>
+            <a href="#roles" className="text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors">{t('nav.forWhom')}</a>
           </nav>
           <div className="flex items-center gap-3 shrink-0">
+            <LanguageSwitcher />
             <ThemeToggle />
-            <button onClick={openLogin} className="px-4 py-2 border border-zharyq-border rounded-[10px] text-sm font-medium hover:border-zharyq-gray transition-colors">Войти</button>
-            <button onClick={openRegister} className="px-4 py-2 rounded-[10px] text-sm font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-colors">Попробовать</button>
+            <button onClick={openLogin} className="px-4 py-2 border border-zharyq-border rounded-[10px] text-sm font-medium hover:border-zharyq-gray transition-colors">{t('nav.login')}</button>
+            <button onClick={openRegister} className="px-4 py-2 rounded-[10px] text-sm font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-colors">{t('nav.tryNow')}</button>
           </div>
         </div>
       </header>
@@ -170,23 +185,23 @@ export default function Landing() {
           <div>
             <div className="inline-flex items-center gap-1.5 bg-zharyq-orange-light border border-orange-200 text-zharyq-orange text-xs font-semibold px-3 py-1 rounded-full mb-6" style={{ letterSpacing: '0.03em' }}>
               <Sparkles size={12} />
-              AI-платформа психологической поддержки
+              {t('landing.heroBadge')}
             </div>
             <h1 className="text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6" style={{ letterSpacing: '-0.02em' }}>
-              Ясный ум.<br />Фокус.<br />
-              <span style={{ color: 'var(--color-accent)' }}>Здоровая среда.</span>
+              {t('landing.heroTitle1')}<br />{t('landing.heroTitle2')}<br />
+              <span style={{ color: 'var(--color-accent)' }}>{t('landing.heroTitle3')}</span>
             </h1>
             <p className="text-lg text-zharyq-gray leading-relaxed mb-10 max-w-md">
-              Платформа психологической поддержки с AI-ассистентом для учащихся и сотрудников.
+              {t('landing.heroSubtitle')}
             </p>
             <div className="flex flex-wrap gap-3">
               <button onClick={openRegister} className="flex items-center gap-2 px-7 py-3 rounded-xl text-[0.9375rem] font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-all hover:-translate-y-px">
                   <MessageCircle size={16} />
-                  Начать первый чек-ин
+                  {t('landing.startCheckin')}
                 </button>
               <a href="#features">
                 <button className="flex items-center gap-2 px-7 py-3 rounded-xl text-[0.9375rem] font-medium border border-zharyq-border hover:border-zharyq-gray transition-all hover:-translate-y-px">
-                  Узнать подробнее
+                  {t('landing.learnMore')}
                   <ArrowDown size={16} />
                 </button>
               </a>
@@ -194,17 +209,17 @@ export default function Landing() {
             <div className="flex gap-8 mt-12">
               <div>
                 <p className="text-2xl font-bold tracking-tight">5+</p>
-                <p className="text-sm text-zharyq-gray mt-0.5">курсов и практик</p>
+                <p className="text-sm text-zharyq-gray mt-0.5">{t('landing.statsCoursesLabel')}</p>
               </div>
               <div className="w-px bg-zharyq-border" />
               <div>
                 <p className="text-2xl font-bold tracking-tight">100%</p>
-                <p className="text-sm text-zharyq-gray mt-0.5">анонимность</p>
+                <p className="text-sm text-zharyq-gray mt-0.5">{t('landing.statsAnonymityLabel')}</p>
               </div>
               <div className="w-px bg-zharyq-border" />
               <div>
                 <p className="text-2xl font-bold tracking-tight">24/7</p>
-                <p className="text-sm text-zharyq-gray mt-0.5">поддержка AI</p>
+                <p className="text-sm text-zharyq-gray mt-0.5">{t('landing.statsAISupportLabel')}</p>
               </div>
             </div>
           </div>
@@ -221,7 +236,7 @@ export default function Landing() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <span className="text-xs text-zharyq-gray">Онлайн</span>
+                  <span className="text-xs text-zharyq-gray">{t('landing.chatOnline')}</span>
                 </div>
               </div>
               <div className="px-4 pt-4 pb-2 flex flex-col gap-3 min-h-[260px]">
@@ -230,12 +245,12 @@ export default function Landing() {
                     <Sparkles size={12} className="text-white" />
                   </div>
                   <div className="bg-zharyq-bg border border-zharyq-border rounded-xl rounded-tl-sm px-3.5 py-2.5 text-sm leading-relaxed max-w-[85%]">
-                    Привет! Я Zharyq AI. Как вы себя чувствуете сегодня?
+                    {t('landing.chatGreeting')}
                   </div>
                 </div>
                 <div className="flex justify-end chat-msg-appear" style={{ animationDelay: '1.2s' }}>
                   <div className="rounded-xl rounded-tr-sm px-3.5 py-2.5 text-sm leading-relaxed max-w-[80%] text-white" style={{ background: 'var(--color-accent)' }}>
-                    Немного устал, много задач…
+                    {t('landing.chatUserMsg')}
                   </div>
                 </div>
                 {!showAiReply ? (
@@ -255,18 +270,18 @@ export default function Landing() {
                       <Sparkles size={12} className="text-white" />
                     </div>
                     <div className="bg-zharyq-bg border border-zharyq-border rounded-xl rounded-tl-sm px-3.5 py-2.5 text-sm leading-relaxed max-w-[85%]">
-                      Понимаю. Давайте проведём короткий чек-ин — всего 3 вопроса.
+                      {t('landing.chatAiReply')}
                     </div>
                   </div>
                 )}
               </div>
               <div className="px-4 pb-3 flex gap-2 flex-wrap">
-                <button className="border border-zharyq-border text-xs px-3 py-1.5 rounded-xl text-zharyq-dark hover:border-zharyq-orange transition-colors" style={{ background: 'var(--color-bg)' }}>Начать чек-ин</button>
-                <button className="border border-zharyq-border text-xs px-3 py-1.5 rounded-xl text-zharyq-dark hover:border-zharyq-orange transition-colors" style={{ background: 'var(--color-bg)' }}>Выговориться</button>
+                <button className="border border-zharyq-border text-xs px-3 py-1.5 rounded-xl text-zharyq-dark hover:border-zharyq-orange transition-colors" style={{ background: 'var(--color-bg)' }}>{t('landing.chatBtnCheckin')}</button>
+                <button className="border border-zharyq-border text-xs px-3 py-1.5 rounded-xl text-zharyq-dark hover:border-zharyq-orange transition-colors" style={{ background: 'var(--color-bg)' }}>{t('landing.chatBtnOpenUp')}</button>
               </div>
               <div className="px-3 pb-3">
                 <div className="flex items-center gap-2 border border-zharyq-border rounded-xl px-3 py-2 bg-zharyq-bg">
-                  <span className="text-xs text-zharyq-gray flex-1 select-none">Расскажите, как вы себя чувствуете…</span>
+                  <span className="text-xs text-zharyq-gray flex-1 select-none">{t('landing.chatInputPlaceholder')}</span>
                   <button className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0" style={{ background: 'var(--color-accent)' }}>
                     <ArrowUp size={12} />
                   </button>
@@ -283,13 +298,13 @@ export default function Landing() {
           <div className="text-center mb-14">
             <div className="inline-flex items-center gap-1.5 bg-zharyq-orange-light border border-orange-200 text-zharyq-orange text-xs font-semibold px-3 py-1 rounded-full mb-4">
               <LayoutGrid size={12} />
-              Возможности
+              {t('landing.featuresSection')}
             </div>
             <h2 className="text-3xl lg:text-4xl font-bold tracking-tight mb-4" style={{ letterSpacing: '-0.02em' }}>
-              Всё, что нужно для<br />психологического здоровья
+              {t('landing.featuresTitle')}
             </h2>
             <p className="text-zharyq-gray text-lg max-w-xl mx-auto">
-              Инструменты, которые работают тихо в фоне — пока вы фокусируетесь на главном.
+              {t('landing.featuresSubtitle')}
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-5">
@@ -298,9 +313,9 @@ export default function Landing() {
                 <div className="w-11 h-11 rounded-xl bg-orange-50 flex items-center justify-center mb-5">
                   <Bot size={20} style={{ color: 'var(--color-accent)' }} />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">Conversational AI</h3>
+                <h3 className="text-lg font-semibold mb-2">{t('landing.featureAITitle')}</h3>
                 <p className="text-zharyq-gray text-sm leading-relaxed max-w-sm">
-                  Тестирование на стресс и выгорание в формате живого диалога с ИИ, а не скучных анкет. Разговор — это уже поддержка.
+                  {t('landing.featureAIDesc')}
                 </p>
               </div>
               <div className="mt-6 flex flex-col gap-2">
@@ -309,12 +324,12 @@ export default function Landing() {
                     <Sparkles size={10} className="text-white" />
                   </div>
                   <div className="border border-zharyq-border text-xs px-3 py-2 rounded-xl rounded-tl-sm max-w-[85%] text-zharyq-dark" style={{ background: 'var(--color-bg)' }}>
-                    Оцените своё состояние по шкале от 1 до 10 прямо сейчас.
+                    {t('landing.featureAIBubble1')}
                   </div>
                 </div>
                 <div className="flex justify-end">
                   <div className="text-xs px-3 py-2 rounded-xl rounded-tr-sm max-w-[75%] text-white" style={{ background: 'var(--color-accent)' }}>
-                    Примерно на 6…
+                    {t('landing.featureAIBubble2')}
                   </div>
                 </div>
               </div>
@@ -323,25 +338,30 @@ export default function Landing() {
               <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-5" style={{ background: 'var(--color-teal-light)' }}>
                 <ShieldCheck size={20} style={{ color: 'var(--color-teal)' }} />
               </div>
-              <h3 className="text-lg font-semibold mb-2">Абсолютная приватность</h3>
+              <h3 className="text-lg font-semibold mb-2">{t('landing.featurePrivacyTitle')}</h3>
               <p className="text-zharyq-gray text-sm leading-relaxed flex-1">
-                Анонимность по умолчанию. 100% шифрование личных данных. Никакой передачи третьим лицам.
+                {t('landing.featurePrivacyDesc')}
               </p>
               <div className="mt-5 flex items-center gap-2 text-xs font-medium" style={{ color: 'var(--color-teal)' }}>
                 <Lock size={14} />
-                End-to-end шифрование
+                {t('landing.featurePrivacyEncryption')}
               </div>
             </div>
             <div className="p-7 flex flex-col" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '16px' }}>
               <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center mb-5">
                 <BookOpen size={20} className="text-blue-500" />
               </div>
-              <h3 className="text-lg font-semibold mb-2">Библиотека практик</h3>
+              <h3 className="text-lg font-semibold mb-2">{t('landing.featureLibraryTitle')}</h3>
               <p className="text-zharyq-gray text-sm leading-relaxed flex-1">
-                5+ персонализированных курсов и практик: управление стрессом, выгорание, тревожность, фокус, эмоциональный интеллект.
+                {t('landing.featureLibraryDesc')}
               </p>
               <div className="mt-5 grid grid-cols-2 gap-2">
-                {[['var(--color-accent)', 'Стресс'], ['#60A5FA', 'Фокус'], ['var(--color-teal)', 'Выгорание'], ['#A78BFA', 'Эмоции']].map(([color, label]) => (
+                {[
+                  ['var(--color-accent)', t('common.stress')],
+                  ['#60A5FA', t('common.focus')],
+                  ['var(--color-teal)', t('common.burnout')],
+                  ['#A78BFA', t('common.emotions')]
+                ].map(([color, label]) => (
                   <div key={label} className="text-[11px] text-zharyq-gray border border-zharyq-border px-2.5 py-1.5 rounded-lg flex items-center gap-1.5" style={{ background: 'var(--color-bg)' }}>
                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
                     {label}
@@ -354,9 +374,9 @@ export default function Landing() {
                 <div className="w-11 h-11 rounded-xl bg-violet-50 flex items-center justify-center mb-5">
                   <BarChart2 size={20} className="text-violet-500" />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">Аналитика в реальном времени</h3>
+                <h3 className="text-lg font-semibold mb-2">{t('landing.featureAnalyticsTitle')}</h3>
                 <p className="text-zharyq-gray text-sm leading-relaxed">
-                  Психологический профиль обновляется после каждого чек-ина. Руководство видит агрегированные данные без персональных деталей.
+                  {t('landing.featureAnalyticsDesc')}
                 </p>
               </div>
               <div className="shrink-0 w-full max-w-[260px] aspect-square">
@@ -373,10 +393,10 @@ export default function Landing() {
           <div className="text-center mb-12">
             <div className="inline-flex items-center gap-1.5 bg-zharyq-orange-light border border-orange-200 text-zharyq-orange text-xs font-semibold px-3 py-1 rounded-full mb-4">
               <Users size={12} />
-              Для кого
+              {t('landing.rolesSection')}
             </div>
             <h2 className="text-3xl lg:text-4xl font-bold tracking-tight" style={{ letterSpacing: '-0.02em' }}>
-              Платформа для каждой роли
+              {t('landing.rolesTitle')}
             </h2>
           </div>
           <div className="flex justify-center mb-10">
@@ -395,12 +415,17 @@ export default function Landing() {
           {activeTab === 'students' && (
             <div className="flex flex-col md:flex-row gap-12 items-center">
               <div className="flex-1 max-w-lg">
-                <h3 className="text-2xl font-bold mb-4 tracking-tight">Поддержка тогда, когда она нужна</h3>
+                <h3 className="text-2xl font-bold mb-4 tracking-tight">{t('landing.studentsTitle')}</h3>
                 <p className="text-zharyq-gray leading-relaxed mb-6">
-                  Начните с короткого чек-ина в любое время. AI-ассистент выслушает, проведёт тест на стресс или тревожность и предложит персонализированный курс — всё анонимно.
+                  {t('landing.studentsDesc')}
                 </p>
                 <ul className="flex flex-col gap-3">
-                  {['Анонимный разговор с AI-ассистентом', 'Еженедельный психологический профиль', 'Персонализированные курсы и практики', 'Серии достижений и геймификация'].map(item => (
+                  {[
+                    t('landing.studentsFeature1'),
+                    t('landing.studentsFeature2'),
+                    t('landing.studentsFeature3'),
+                    t('landing.studentsFeature4'),
+                  ].map(item => (
                     <li key={item} className="flex items-start gap-3 text-sm">
                       <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ background: 'var(--color-accent-light)', color: 'var(--color-accent)' }}>
                         <Check size={12} />
@@ -410,7 +435,7 @@ export default function Landing() {
                   ))}
                 </ul>
                 <button onClick={openRegister} className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-all">
-                    Попробовать бесплатно <ChevronRight size={16} />
+                    {t('landing.studentsCta')} <ChevronRight size={16} />
                   </button>
               </div>
               <div className="flex-1 flex justify-center">
@@ -419,13 +444,13 @@ export default function Landing() {
                     <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-zharyq-teal to-blue-400" />
                     <div>
                       <p className="text-sm font-semibold">Асель Т.</p>
-                      <p className="text-xs text-zharyq-gray">Старшая школа</p>
+                      <p className="text-xs text-zharyq-gray">{t('landing.studentsCardSchool')}</p>
                     </div>
                     <div className="ml-auto">
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border" style={{ color: 'var(--color-teal)', background: 'var(--color-teal-light)', borderColor: 'rgba(20,184,166,0.2)' }}>В норме</span>
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border" style={{ color: 'var(--color-teal)', background: 'var(--color-teal-light)', borderColor: 'rgba(20,184,166,0.2)' }}>{t('landing.studentsCardStatus')}</span>
                     </div>
                   </div>
-                  <p className="text-xs text-zharyq-gray mb-3 font-semibold uppercase tracking-wider">Психологический профиль</p>
+                  <p className="text-xs text-zharyq-gray mb-3 font-semibold uppercase tracking-wider">{t('landing.studentsCardProfile')}</p>
                   <div className="w-full aspect-square max-w-[200px] mx-auto">
                     <Radar data={radarData} options={radarOptions} />
                   </div>
@@ -436,12 +461,17 @@ export default function Landing() {
           {activeTab === 'psychologists' && (
             <div className="flex flex-col md:flex-row gap-12 items-center">
               <div className="flex-1 max-w-lg">
-                <h3 className="text-2xl font-bold mb-4 tracking-tight">Умный помощник для психолога</h3>
+                <h3 className="text-2xl font-bold mb-4 tracking-tight">{t('landing.psychologistsTitle')}</h3>
                 <p className="text-zharyq-gray leading-relaxed mb-6">
-                  Видите агрегированные данные по всем подопечным. Получайте автоматические алерты при высоком уровне стресса и принимайте обоснованные решения.
+                  {t('landing.psychologistsDesc')}
                 </p>
                 <ul className="flex flex-col gap-3">
-                  {['Дашборд с алертами и приоритетами', 'Психологические профили учащихся', 'Инструменты для заметок и сессий', 'AI-рекомендации по курсам'].map(item => (
+                  {[
+                    t('landing.psychologistsFeature1'),
+                    t('landing.psychologistsFeature2'),
+                    t('landing.psychologistsFeature3'),
+                    t('landing.psychologistsFeature4'),
+                  ].map(item => (
                     <li key={item} className="flex items-start gap-3 text-sm">
                       <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ background: 'var(--color-teal-light)', color: 'var(--color-teal)' }}>
                         <Check size={12} />
@@ -452,16 +482,16 @@ export default function Landing() {
                 </ul>
                 <Link to="/psychologist">
                   <button className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white transition-all" style={{ background: 'var(--color-teal)' }}>
-                    Панель психолога <ChevronRight size={16} />
+                    {t('landing.psychologistsCta')} <ChevronRight size={16} />
                   </button>
                 </Link>
               </div>
               <div className="flex-1 flex justify-center">
                 <div className="w-full max-w-xs rounded-2xl border border-zharyq-border bg-white p-5 shadow-sm space-y-3">
-                  {[{ id: 12, lvl: 'Критический', color: 'red' }, { id: 5, lvl: 'Критический', color: 'red' }, { id: 7, lvl: 'Средний', color: 'amber' }].map(a => (
+                  {[{ id: 12, lvl: t('director.riskCritical'), color: 'red' }, { id: 5, lvl: t('director.riskCritical'), color: 'red' }, { id: 7, lvl: t('director.riskMedium'), color: 'amber' }].map(a => (
                     <div key={a.id} className="flex items-center gap-3 p-3 border border-zharyq-border rounded-xl">
                       <div className={`w-2 h-2 rounded-full shrink-0 bg-${a.color}-500`} />
-                      <span className="text-sm flex-1">Аноним #{a.id}</span>
+                      <span className="text-sm flex-1">{t('common.anonymous')} #{a.id}</span>
                       <span className={`text-[11px] font-semibold text-${a.color}-600 bg-${a.color}-50 border border-${a.color}-100 px-2 py-0.5 rounded-full`}>{a.lvl}</span>
                     </div>
                   ))}
@@ -472,12 +502,17 @@ export default function Landing() {
           {activeTab === 'management' && (
             <div className="flex flex-col md:flex-row gap-12 items-center">
               <div className="flex-1 max-w-lg">
-                <h3 className="text-2xl font-bold mb-4 tracking-tight">Данные для принятия решений</h3>
+                <h3 className="text-2xl font-bold mb-4 tracking-tight">{t('landing.managementTitle')}</h3>
                 <p className="text-zharyq-gray leading-relaxed mb-6">
-                  Агрегированная аналитика по всей организации. Отслеживайте ROI, снижение пропусков и рост вовлечённости без нарушения приватности сотрудников.
+                  {t('landing.managementDesc')}
                 </p>
                 <ul className="flex flex-col gap-3">
-                  {['Общий индекс благополучия', 'ROI-метрики и вовлечённость', 'Тренды по месяцам в реальном времени', 'Управление психологами и ресурсами'].map(item => (
+                  {[
+                    t('landing.managementFeature1'),
+                    t('landing.managementFeature2'),
+                    t('landing.managementFeature3'),
+                    t('landing.managementFeature4'),
+                  ].map(item => (
                     <li key={item} className="flex items-start gap-3 text-sm">
                       <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ background: 'rgba(139,92,246,0.1)', color: '#8B5CF6' }}>
                         <Check size={12} />
@@ -493,18 +528,18 @@ export default function Landing() {
               <div className="flex-1 flex justify-center">
                 <div className="w-full max-w-xs rounded-2xl border border-zharyq-border bg-white p-5 shadow-sm space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-zharyq-gray font-semibold uppercase tracking-wider">Индекс благополучия</p>
+                    <p className="text-xs text-zharyq-gray font-semibold uppercase tracking-wider">{t('landing.managementWellbeingLabel')}</p>
                     <span className="text-emerald-600 text-xs font-medium">+4.1%</span>
                   </div>
                   <p className="text-3xl font-semibold">82%</p>
                   <div className="h-px bg-zharyq-border" />
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <div className="border border-zharyq-border rounded-xl p-3">
-                      <p className="text-xs text-zharyq-gray mb-1">Снижение пропусков</p>
+                      <p className="text-xs text-zharyq-gray mb-1">{t('landing.managementAbsences')}</p>
                       <p className="text-lg font-semibold">-8.6%</p>
                     </div>
                     <div className="border border-zharyq-border rounded-xl p-3">
-                      <p className="text-xs text-zharyq-gray mb-1">Вовлечённость</p>
+                      <p className="text-xs text-zharyq-gray mb-1">{t('landing.managementEngagement')}</p>
                       <p className="text-lg font-semibold">+15%</p>
                     </div>
                   </div>
@@ -519,14 +554,14 @@ export default function Landing() {
       <section className="py-24 px-6 bg-zharyq-bg">
         <div className="max-w-2xl mx-auto text-center">
           <h2 className="text-3xl lg:text-4xl font-bold tracking-tight mb-4" style={{ letterSpacing: '-0.02em' }}>
-            Готовы начать?
+            {t('landing.ctaTitle')}
           </h2>
           <p className="text-zharyq-gray text-lg mb-8">
-            Первый чек-ин займёт меньше 3 минут. Полностью анонимно.
+            {t('landing.ctaSubtitle')}
           </p>
           <button onClick={openRegister} className="flex items-center gap-2 px-8 py-4 rounded-xl text-base font-semibold text-white bg-zharyq-orange hover:bg-zharyq-orange-hover transition-all hover:-translate-y-px mx-auto">
               <MessageCircle size={18} />
-              Начать первый чек-ин
+              {t('landing.startCheckin')}
             </button>
         </div>
       </section>
@@ -540,10 +575,10 @@ export default function Landing() {
             </div>
             <span className="font-semibold">Zharyq</span>
           </div>
-          <p className="text-sm text-zharyq-gray">© 2026 Zharyq. Все права защищены.</p>
+          <p className="text-sm text-zharyq-gray">© 2026 Zharyq. {t('landing.footerRights')}</p>
           <div className="flex gap-5">
-            <a href="#" className="text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors">Политика конфиденциальности</a>
-            <a href="#" className="text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors">Условия использования</a>
+            <a href="#" className="text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors">{t('landing.footerPrivacy')}</a>
+            <a href="#" className="text-sm text-zharyq-gray hover:text-zharyq-dark transition-colors">{t('landing.footerTerms')}</a>
           </div>
         </div>
       </footer>
@@ -573,7 +608,7 @@ export default function Landing() {
                 <div className="w-6 h-6 rounded-full bg-zharyq-orange flex items-center justify-center">
                   <Sparkles size={12} className="text-white" />
                 </div>
-                <span className="font-semibold text-zharyq-dark">Вход в Zharyq</span>
+                <span className="font-semibold text-zharyq-dark">{t('auth.loginTitle')}</span>
               </div>
               <button onClick={() => setLoginOpen(false)} className="text-zharyq-gray hover:text-zharyq-dark transition">
                 <X size={18} />
@@ -582,7 +617,7 @@ export default function Landing() {
 
             <form onSubmit={handleLogin} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-zharyq-dark">Имя пользователя</label>
+                <label className="text-sm font-medium text-zharyq-dark">{t('auth.usernameLabel')}</label>
                 <input
                   value={loginForm.username}
                   onChange={e => setLoginForm(f => ({ ...f, username: e.target.value }))}
@@ -595,7 +630,7 @@ export default function Landing() {
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-zharyq-dark">Пароль</label>
+                <label className="text-sm font-medium text-zharyq-dark">{t('auth.passwordLabel')}</label>
                 <div className="relative">
                   <input
                     type={showPass ? 'text' : 'password'}
@@ -625,14 +660,14 @@ export default function Landing() {
                 disabled={loginLoading}
                 className="py-2.5 rounded-xl bg-zharyq-orange text-white font-semibold text-sm hover:bg-zharyq-orange-hover transition disabled:opacity-60"
               >
-                {loginLoading ? 'Входим...' : 'Войти'}
+                {loginLoading ? t('auth.loggingIn') : t('auth.loginBtn')}
               </button>
             </form>
 
             <p className="mt-4 text-center text-sm text-zharyq-gray">
-              Нет аккаунта?{' '}
+              {t('auth.noAccount')}{' '}
               <button type="button" onClick={openRegister} className="text-zharyq-teal font-medium hover:underline">
-                Зарегистрироваться
+                {t('auth.register')}
               </button>
             </p>
           </div>
@@ -651,7 +686,7 @@ export default function Landing() {
                 <div className="w-6 h-6 rounded-full bg-zharyq-orange flex items-center justify-center">
                   <Sparkles size={12} className="text-white" />
                 </div>
-                <span className="font-semibold text-zharyq-dark">Регистрация в Zharyq</span>
+                <span className="font-semibold text-zharyq-dark">{t('auth.registerTitle')}</span>
               </div>
               <button onClick={() => setRegisterOpen(false)} className="text-zharyq-gray hover:text-zharyq-dark transition">
                 <X size={18} />
@@ -660,9 +695,14 @@ export default function Landing() {
 
             <form onSubmit={handleRegister} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-zharyq-dark">Роль</label>
+                <label className="text-sm font-medium text-zharyq-dark">{t('auth.roleLabel')}</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {[{v:'student',l:'Ученик'},{v:'employee',l:'Сотрудник'},{v:'psychologist',l:'Психолог'},{v:'director',l:'Директор'}].map(r => (
+                  {[
+                    { v: 'student', l: t('auth.roleStudent') },
+                    { v: 'employee', l: t('auth.roleEmployee') },
+                    { v: 'psychologist', l: t('auth.rolePsychologist') },
+                    { v: 'director', l: t('auth.roleDirector') },
+                  ].map(r => (
                     <button
                       key={r.v}
                       type="button"
@@ -680,7 +720,7 @@ export default function Landing() {
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-zharyq-dark">Имя пользователя</label>
+                <label className="text-sm font-medium text-zharyq-dark">{t('auth.usernameLabel')}</label>
                 <input
                   value={regForm.username}
                   onChange={e => setRegForm(f => ({ ...f, username: e.target.value }))}
@@ -693,7 +733,7 @@ export default function Landing() {
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-zharyq-dark">Email</label>
+                <label className="text-sm font-medium text-zharyq-dark">{t('auth.emailLabel')}</label>
                 <input
                   type="email"
                   value={regForm.email}
@@ -706,7 +746,7 @@ export default function Landing() {
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-zharyq-dark">Пароль</label>
+                <label className="text-sm font-medium text-zharyq-dark">{t('auth.passwordLabel')}</label>
                 <div className="relative">
                   <input
                     type={showRegPass ? 'text' : 'password'}
@@ -714,7 +754,7 @@ export default function Landing() {
                     onChange={e => setRegForm(f => ({ ...f, password: e.target.value }))}
                     required
                     autoComplete="new-password"
-                    placeholder="Минимум 6 символов"
+                    placeholder={t('auth.passwordPlaceholder')}
                     className="w-full px-3 py-2 pr-10 rounded-xl border border-zharyq-border bg-zharyq-bg text-zharyq-dark text-sm outline-none focus:border-zharyq-teal transition"
                   />
                   <button
@@ -729,11 +769,11 @@ export default function Landing() {
 
               {regForm.role === 'student' && (
                 <div className="flex flex-col gap-1">
-                  <label className="text-sm font-medium text-zharyq-dark">Класс <span className="text-zharyq-gray font-normal">(необязательно)</span></label>
+                  <label className="text-sm font-medium text-zharyq-dark">{t('auth.classLabel')} <span className="text-zharyq-gray font-normal">{t('auth.classOptional')}</span></label>
                   <input
                     value={regForm.class_name}
                     onChange={e => setRegForm(f => ({ ...f, class_name: e.target.value }))}
-                    placeholder="Например: 10А"
+                    placeholder={t('auth.classPlaceholder')}
                     className="px-3 py-2 rounded-xl border border-zharyq-border bg-zharyq-bg text-zharyq-dark text-sm outline-none focus:border-zharyq-teal transition"
                   />
                 </div>
@@ -748,14 +788,14 @@ export default function Landing() {
                 disabled={regLoading}
                 className="py-2.5 rounded-xl bg-zharyq-orange text-white font-semibold text-sm hover:bg-zharyq-orange-hover transition disabled:opacity-60"
               >
-                {regLoading ? 'Создаём аккаунт...' : 'Зарегистрироваться'}
+                {regLoading ? t('auth.creatingAccount') : t('auth.registerBtn')}
               </button>
             </form>
 
             <p className="mt-4 text-center text-sm text-zharyq-gray">
-              Уже есть аккаунт?{' '}
+              {t('auth.alreadyHaveAccount')}{' '}
               <button type="button" onClick={openLogin} className="text-zharyq-teal font-medium hover:underline">
-                Войти
+                {t('auth.loginBtn')}
               </button>
             </p>
           </div>

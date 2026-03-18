@@ -7,7 +7,9 @@ import {
   Quote, Trash2, CheckSquare, X
 } from 'lucide-react'
 import ThemeToggle from '../components/ThemeToggle'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 import { useTheme } from '../context/ThemeContext'
+import { useTranslation } from 'react-i18next'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
@@ -45,6 +47,7 @@ function EmptyStateIllustration() {
 }
 
 function CourseSettingsEditor({ courseId, initialCategory, initialDescription, initialDuration, lessonsCount, courseType, onSave }) {
+  const { t } = useTranslation()
   const [category, setCategory] = useState(initialCategory || 'Стресс')
   const [description, setDescription] = useState(initialDescription || '')
   const [duration, setDuration] = useState(initialDuration || 45)
@@ -70,11 +73,11 @@ function CourseSettingsEditor({ courseId, initialCategory, initialDescription, i
   return (
     <div className="h-full overflow-y-auto animate-fade-in-up">
       <div className="max-w-2xl mx-auto px-8 py-8">
-        <h2 className="text-lg font-semibold text-zharyq-dark mb-1">Настройки курса</h2>
-        <p className="text-sm text-zharyq-gray mb-8">Общая информация и обложка курса</p>
+        <h2 className="text-lg font-semibold text-zharyq-dark mb-1">{t('courseBuilder.settingsTitle')}</h2>
+        <p className="text-sm text-zharyq-gray mb-8">{t('courseBuilder.settingsSubtitle')}</p>
 
         <div className="mb-6">
-          <label className="block text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Обложка курса</label>
+          <label className="block text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">{t('courseBuilder.coverLabel')}</label>
           <div
             className="w-full aspect-video rounded-xl border border-dashed border-zharyq-border flex flex-col items-center justify-center gap-3 cursor-pointer transition-colors hover:border-zharyq-orange group"
             style={{ background: 'var(--color-surface)' }}
@@ -83,14 +86,14 @@ function CourseSettingsEditor({ courseId, initialCategory, initialDescription, i
               <Upload size={18} className="text-zharyq-gray group-hover:text-zharyq-orange transition-colors" strokeWidth={1.5} />
             </div>
             <div className="text-center">
-              <p className="text-sm font-medium text-zharyq-dark">Загрузить обложку</p>
-              <p className="text-xs text-zharyq-gray mt-0.5">Рекомендуется 1280×720 · PNG, JPG</p>
+              <p className="text-sm font-medium text-zharyq-dark">{t('courseBuilder.uploadCover')}</p>
+              <p className="text-xs text-zharyq-gray mt-0.5">{t('courseBuilder.coverHint')}</p>
             </div>
           </div>
         </div>
 
         <div className="mb-6">
-          <label className="block text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">Категория</label>
+          <label className="block text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-3">{t('courseBuilder.categoryLabel')}</label>
           <div className="relative">
             <select
               value={category}
@@ -728,6 +731,7 @@ function EmptyEditor() {
 }
 
 export default function CourseBuilder() {
+  const { t } = useTranslation()
   const { isDark } = useTheme()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -1000,6 +1004,7 @@ export default function CourseBuilder() {
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
+          <LanguageSwitcher />
           <ThemeToggle />
           <button
             onClick={() => courseId && navigate(`/course/${courseId}`)}
