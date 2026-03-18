@@ -18,7 +18,7 @@ import {
 import ThemeToggle from '../components/ThemeToggle'
 import { useTheme } from '../context/ThemeContext'
 import { fetchUserMetrics, fetchTests, fetchTestDetail, submitTest, fetchMyTestResults, updateSettings, fetchStreak } from '../api/api'
-import { getTestLevelInfo } from '../utils/testLevels'
+import { getTestLevelInfo, getTestInterpretation } from '../utils/testLevels'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend, RadialLinearScale)
 
@@ -1059,9 +1059,7 @@ export default function StudentApp() {
                     <div className="border border-zharyq-border rounded-xl p-4 bg-white mb-4">
                       <h3 className="text-sm font-semibold mb-2">Интерпретация</h3>
                       <p className="text-xs text-zharyq-gray leading-relaxed">
-                        {testResult.overall_level === 'high' && 'У вас высокий уровень жизнестойкости. Вы хорошо справляетесь со стрессом, уверены в себе и открыты к новому опыту. Продолжайте поддерживать свое психологическое здоровье!'}
-                        {testResult.overall_level === 'medium' && 'У вас средний уровень жизнестойкости. Вы в целом неплохо справляетесь со стрессом, но некоторые области можно укрепить. Рекомендуем пройти курсы по управлению стрессом и развитию контроля.'}
-                        {testResult.overall_level === 'low' && 'Ваш уровень жизнестойкости ниже среднего. Это означает, что стрессовые ситуации могут быть для вас сложными. Рекомендуем обратиться к психологу и пройти курсы по управлению стрессом и развитию эмоциональной устойчивости.'}
+                        {getTestInterpretation(activeTest?.slug, testResult.overall_level)}
                       </p>
                     </div>
 
@@ -1642,7 +1640,7 @@ export default function StudentApp() {
       <aside className="hidden lg:flex flex-col w-[30%] min-w-[300px] max-w-[360px] bg-white border-l border-zharyq-border p-6 h-full overflow-y-auto">
         {/* Dynamic status banner based on latest test */}
         {(() => {
-          const latest = testHistory[0]
+          const latest = testHistory.find(t => t.test_slug === 'hardiness-maddi')
           if (!latest) return null
           if (latest.overall_level === 'high') return (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6 flex items-start gap-3">
