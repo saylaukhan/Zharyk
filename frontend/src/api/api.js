@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
 function getHeaders() {
   const token = localStorage.getItem('token');
@@ -87,6 +87,37 @@ export const submitTest = (testId, answers) =>
   });
 export const fetchMyTestResults = () => request('/tests/results/me');
 export const fetchUserTestResults = (userId) => request(`/tests/results/user/${userId}`);
+
+// ── SLA Dashboard ─────────────────────────────────────────────
+export const fetchSlaData = () => request('/analytics/sla');
+
+// ── Audit Trail ───────────────────────────────────────────────
+export const fetchAuditLogs = ({ limit = 50, offset = 0, dateFrom, dateTo, action, actorId, targetUserId } = {}) => {
+  const params = new URLSearchParams({ limit, offset });
+  if (dateFrom) params.append('date_from', dateFrom);
+  if (dateTo) params.append('date_to', dateTo);
+  if (action) params.append('action', action);
+  if (actorId) params.append('actor_id', actorId);
+  if (targetUserId) params.append('target_user_id', targetUserId);
+  return request(`/audit/logs?${params}`);
+};
+export const fetchAuditActions = () => request('/audit/actions');
+
+// ── Cohort Analysis ───────────────────────────────────────────
+export const fetchCohorts = () => request('/analytics/cohorts');
+export const fetchCohortComparison = (cohortA, cohortB, metric = 'stress') =>
+  request(`/analytics/cohort-comparison?cohort_a=${encodeURIComponent(cohortA)}&cohort_b=${encodeURIComponent(cohortB)}&metric=${metric}`);
+
+// ── Campaigns (Mass Campaign Hub) ─────────────────────────────
+export const fetchCampaigns = () => request('/campaigns/');
+export const fetchMyCampaigns = () => request('/campaigns/my');
+export const createCampaign = (data) => request('/campaigns/', { method: 'POST', body: JSON.stringify(data) });
+export const launchCampaign = (id) => request(`/campaigns/${id}/launch`, { method: 'POST' });
+export const deleteCampaign = (id) => request(`/campaigns/${id}`, { method: 'DELETE' });
+export const previewCampaignAudience = ({ target_roles = 'student', target_classes = '' } = {}) => {
+  const p = new URLSearchParams({ target_roles, target_classes });
+  return request(`/campaigns/preview?${p}`);
+};
 
 // ── Recommendations ───────────────────────────────────────────
 export const fetchRecommendations = (userId) => request(`/recommendations/${userId}`);

@@ -2,23 +2,29 @@ import { createContext, useContext, useEffect, useState } from 'react'
 
 const ThemeContext = createContext(null)
 
+const THEMES = ['light', 'dark', 'high-contrast']
+
 export function ThemeProvider({ children }) {
-  const [isDark, setIsDark] = useState(() => {
+  const [theme, setTheme] = useState(() => {
     const stored = localStorage.getItem('theme')
+    if (stored && THEMES.includes(stored)) return stored
+    const prefersHighContrast = window.matchMedia('(prefers-contrast: more)').matches
+    if (prefersHighContrast) return 'high-contrast'
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    return stored === 'dark' || (!stored && prefersDark)
+    return prefersDark ? 'dark' : 'light'
   })
 
   useEffect(() => {
     const html = document.documentElement
-    if (isDark) html.classList.add('dark')
-    else html.classList.remove('dark')
-  }, [isDark])
+    html.classList.remove('dark', 'high-contrast')
+    if (theme === 'dark') html.classList.add('dark')
+    else if (theme === 'high-contrast') html.classList.add('dark', 'high-contrast')
+  }, [theme])
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const handler = (e) => {
-      if (!localStorage.getItem('theme')) setIsDark(e.matches)
+      if (!localStorage.getItem('theme')) setTheme(e.matches ? 'dark' : 'light')
     }
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
@@ -27,14 +33,16 @@ export function ThemeProvider({ children }) {
   const toggleTheme = () => {
     const html = document.documentElement
     html.classList.add('theme-transitioning')
-    const next = !isDark
-    setIsDark(next)
-    localStorage.setItem('theme', next ? 'dark' : 'light')
+    const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]
+    setTheme(next)
+    localStorage.setItem('theme', next)
     setTimeout(() => html.classList.remove('theme-transitioning'), 380)
   }
 
+  const isDark = theme === 'dark' // backwards compat
+
   return (
-    <ThemeContext.Provider value={{ isDark, toggleTheme }}>
+    <ThemeContext.Provider value={{ isDark, theme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   )

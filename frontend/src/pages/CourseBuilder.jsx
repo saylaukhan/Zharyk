@@ -11,7 +11,7 @@ import LanguageSwitcher from '../components/LanguageSwitcher'
 import { useTheme } from '../context/ThemeContext'
 import { useTranslation } from 'react-i18next'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+const API = import.meta.env.VITE_API_URL || '/api/v1'
 
 function useDebounce(fn, delay) {
   const timer = useRef(null)

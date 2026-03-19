@@ -38,12 +38,34 @@
     --color-chart-grid:       #3F3F46;
 }
 
+/* ── Высокий контраст — для слабовидящих ────────────────── */
+.high-contrast {
+    --color-bg:               #000000;
+    --color-surface:          #0D0D0D;
+    --color-text-primary:     #FFFFFF;
+    --color-text-secondary:   #FFFF00;
+    --color-border:           #FFFFFF;
+    --color-accent:           #FFFF00;
+    --color-accent-light:     rgba(255, 255, 0, 0.20);
+    --color-accent-hover:     #E6E600;
+    --color-teal:             #00FFCC;
+    --color-teal-light:       rgba(0, 255, 204, 0.15);
+    --color-teal-text:        #00FFCC;
+    --color-chart-grid:       #FFFFFF;
+}
+
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-secondary); }
 
 input:focus, button:focus { outline: none; }
+.high-contrast input:focus,
+.high-contrast button:focus,
+.high-contrast a:focus {
+    outline: 3px solid #FFFF00 !important;
+    outline-offset: 2px !important;
+}
 
 .dark body, .dark main, .dark aside, .dark header, .dark nav {
     background-color: var(--color-bg);
@@ -102,7 +124,8 @@ input:focus, button:focus { outline: none; }
 }
 
 .theme-toggle .icon-sun,
-.theme-toggle .icon-moon {
+.theme-toggle .icon-moon,
+.theme-toggle .icon-contrast {
     position: absolute;
     top: 0;
     left: 0;
@@ -110,10 +133,18 @@ input:focus, button:focus { outline: none; }
     transition: opacity 200ms ease-out, transform 220ms ease-out;
 }
 
-.theme-toggle .icon-sun { opacity: 1; transform: rotate(0deg) scale(1); }
-.theme-toggle .icon-moon { opacity: 0; transform: rotate(45deg) scale(0.4); }
-.dark .theme-toggle .icon-sun { opacity: 0; transform: rotate(-45deg) scale(0.4); }
-.dark .theme-toggle .icon-moon { opacity: 1; transform: rotate(0deg) scale(1); }
+/* Light mode: show Sun */
+.theme-toggle .icon-sun      { opacity: 1; transform: rotate(0deg) scale(1); }
+.theme-toggle .icon-moon     { opacity: 0; transform: rotate(45deg) scale(0.4); }
+.theme-toggle .icon-contrast { opacity: 0; transform: rotate(45deg) scale(0.4); }
+/* Dark mode: show Moon */
+.dark .theme-toggle .icon-sun      { opacity: 0; transform: rotate(-45deg) scale(0.4); }
+.dark .theme-toggle .icon-moon     { opacity: 1; transform: rotate(0deg) scale(1); }
+.dark .theme-toggle .icon-contrast { opacity: 0; transform: rotate(45deg) scale(0.4); }
+/* High-contrast mode: show Eye (overrides dark rules above) */
+.high-contrast .theme-toggle .icon-sun      { opacity: 0; transform: rotate(-45deg) scale(0.4); }
+.high-contrast .theme-toggle .icon-moon     { opacity: 0; transform: rotate(45deg) scale(0.4); }
+.high-contrast .theme-toggle .icon-contrast { opacity: 1; transform: rotate(0deg) scale(1); }
 
 .active-filter {
     background-color: var(--color-accent);
@@ -146,6 +177,12 @@ input:focus, button:focus { outline: none; }
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .auth-modal, .animate-modal-in { animation: modal-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes slide-in-left {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+}
+.animate-slide-in-left { animation: slide-in-left 260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 
 .auth-input { outline: none; }
 
@@ -461,6 +498,28 @@ input:focus, button:focus { outline: none; }
     border-color: var(--color-border);
 }
 
+
+/* ── High-contrast component overrides ──────────────────── */
+.high-contrast .bg-gray-100      { background-color: #1A1A1A !important; }
+.high-contrast .bg-orange-50     { background-color: rgba(255,255,0,0.12) !important; }
+.high-contrast .bg-blue-50       { background-color: rgba(0,200,255,0.12) !important; }
+.high-contrast .border-orange-200 { border-color: rgba(255,255,0,0.60) !important; }
+.high-contrast .border-teal-200  { border-color: rgba(0,255,204,0.60) !important; }
+.high-contrast .text-green-700   { color: #00FF80 !important; }
+.high-contrast .text-red-600     { color: #FF6666 !important; }
+.high-contrast .nav-item:hover   { background-color: #2A2A00; }
+.high-contrast .nav-item.active-nav { background-color: rgba(255,255,0,0.20); color: var(--color-accent); }
+.high-contrast .psych-nav.active-nav { background-color: rgba(255,255,0,0.20); color: var(--color-accent); }
+.high-contrast .active-filter    { background-color: var(--color-accent); color: #000000; }
+.high-contrast table td,
+.high-contrast table th          { color: var(--color-text-primary); border-color: var(--color-border); }
+.high-contrast .zharyq-calendar .rbc-today {
+    background-color: rgba(255,255,0,0.10) !important;
+}
+.high-contrast .zharyq-calendar .rbc-date-cell.rbc-now { color: var(--color-accent); }
+.high-contrast .zharyq-calendar .rbc-event             { box-shadow: 0 0 0 2px #FFFF00; }
+.high-contrast .auth-modal  { border: 2px solid var(--color-border); }
+.high-contrast .auth-input:focus { border-color: var(--color-accent) !important; }
 
 /* ── Text selection on orange-background elements ───────── */
 .selection-teal::selection,

@@ -5,6 +5,8 @@ from typing import List
 from ..database import get_db
 from ..models import TherapySession as Session, User
 from ..schemas import SessionCreate, SessionOut, SessionUpdate
+from ..auth import get_current_user
+from ..services.audit import write_audit
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -38,7 +40,11 @@ def get_session(session_id: int, db: DBSession = Depends(get_db)):
 
 
 @router.post("/", response_model=SessionOut)
-def create_session(session: SessionCreate, db: DBSession = Depends(get_db)):
+def create_session(
+    session: SessionCreate,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     db_session = Session(**session.model_dump())
     db.add(db_session)
     db.commit()
@@ -47,11 +53,23 @@ def create_session(session: SessionCreate, db: DBSession = Depends(get_db)):
     student = db.query(User).filter(User.id == db_session.user_id).first()
     if student:
         data.student_name = student.anonymous_id or student.username
+    write_audit(
+        db, current_user.id, current_user.username, current_user.role,
+        "CREATE_SESSION",
+        target_user_id=db_session.user_id,
+        target_anonymous_id=student.anonymous_id if student else None,
+        reason=f"Session '{db_session.title}' scheduled for {db_session.scheduled_at}",
+    )
     return data
 
 
 @router.put("/{session_id}", response_model=SessionOut)
-def update_session(session_id: int, payload: SessionUpdate, db: DBSession = Depends(get_db)):
+def update_session(
+    session_id: int,
+    payload: SessionUpdate,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     session = db.query(Session).filter(Session.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -64,16 +82,36 @@ def update_session(session_id: int, payload: SessionUpdate, db: DBSession = Depe
     student = db.query(User).filter(User.id == session.user_id).first()
     if student:
         data.student_name = student.anonymous_id or student.username
+    write_audit(
+        db, current_user.id, current_user.username, current_user.role,
+        "UPDATE_SESSION",
+        target_user_id=session.user_id,
+        target_anonymous_id=student.anonymous_id if student else None,
+        reason=f"Session #{session_id} updated",
+    )
     return data
 
 
 @router.delete("/{session_id}")
-def delete_session(session_id: int, db: DBSession = Depends(get_db)):
+def delete_session(
+    session_id: int,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     session = db.query(Session).filter(Session.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    target_user_id = session.user_id
+    student = db.query(User).filter(User.id == target_user_id).first()
     db.delete(session)
     db.commit()
+    write_audit(
+        db, current_user.id, current_user.username, current_user.role,
+        "DELETE_SESSION",
+        target_user_id=target_user_id,
+        target_anonymous_id=student.anonymous_id if student else None,
+        reason=f"Session #{session_id} deleted",
+    )
     return {"ok": True}
 
 

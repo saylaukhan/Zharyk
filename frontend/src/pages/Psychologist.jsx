@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Search, AlertTriangle, Activity, CheckCircle, X, Plus,
   ClipboardList, Clock, Layers, Zap, Brain, BatteryLow,
-  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles, Pencil, Trash2, BookOpen, Eye, Edit3, Image, Upload, BarChart2
+  Bell, Users, Calendar, FileText, Settings, ShieldCheck, LogOut, Sparkles, Pencil, Trash2, BookOpen, Eye, Edit3, Image, Upload, BarChart2, Megaphone
 } from 'lucide-react'
 import { Radar, Pie, Line } from 'react-chartjs-2'
 import {
@@ -30,6 +30,8 @@ import { getTestLevelInfo } from '../utils/testLevels'
 import { useAlertWebSocket } from '../hooks/useAlertWebSocket'
 import AlertBanner from '../components/AlertBanner'
 import AlertDetailModal from '../components/AlertDetailModal'
+import CohortComparison from '../components/CohortComparison'
+import CampaignHub from '../components/CampaignHub'
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend, ArcElement, CategoryScale, LinearScale)
 
@@ -83,7 +85,7 @@ const CATEGORY_STYLES = {
   'Мотивация': { tag: 'text-blue-600 bg-blue-50 border-blue-200' },
   'Эмоции': { tag: 'text-teal-600 bg-teal-50 border-teal-200' }
 }
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+const API = import.meta.env.VITE_API_URL || '/api/v1'
 
 const EMPTY_FORM = {
   title: '',
@@ -374,7 +376,7 @@ export default function Psychologist() {
       confirm_password: form.confirm_password.value
     };
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/change-password`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/auth/change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -486,6 +488,7 @@ export default function Psychologist() {
     tests: [t('psychologist.titlesTests'), t('psychologist.titlesTestsDesc')],
     courses: [t('psychologist.titlesCourses'), t('psychologist.titlesCoursesDesc')],
     analytics: [t('psychologist.titlesAnalytics'), t('psychologist.titlesAnalyticsDesc')],
+    campaigns: [t('campaign.title'), t('campaign.subtitle')],
     settings: [t('psychologist.titlesSettings'), t('psychologist.titlesSettingsDesc')]
   }
 
@@ -496,6 +499,7 @@ export default function Psychologist() {
     { id: 'tests', icon: FileText, label: t('psychologist.navTests') },
     { id: 'notes', icon: ClipboardList, label: t('psychologist.navNotes') },
     { id: 'courses', icon: BookOpen, label: t('psychologist.navCourses') },
+    { id: 'campaigns', icon: Megaphone, label: t('campaign.navLabel') },
     { id: 'analytics', icon: BarChart2, label: t('psychologist.navAnalytics') },
     { id: 'settings', icon: Settings, label: t('psychologist.navSettings') },
   ]
@@ -1261,6 +1265,11 @@ export default function Psychologist() {
                 </article>
               </section>
 
+              {/* Cohort Comparison */}
+              <section>
+                <CohortComparison />
+              </section>
+
               {/* Users table */}
               <section>
                 <article className="rounded-2xl border border-zharyq-border bg-zharyq-bg p-5">
@@ -1381,6 +1390,15 @@ export default function Psychologist() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* CAMPAIGNS VIEW */}
+        {view === 'campaigns' && (
+          <div className="flex-1 overflow-y-auto p-6 animate-fade-in-up">
+            <div className="max-w-5xl mx-auto">
+              <CampaignHub />
             </div>
           </div>
         )}

@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Check, Lock, ChevronRight, Loader2, Sparkles, Wind } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Check, Lock, ChevronRight, Loader2, Sparkles, Wind, Menu, X } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import ThemeToggle from '../components/ThemeToggle';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API = import.meta.env.VITE_API_URL || '/api/v1';
 
 export default function CoursePass() {
   const { t } = useTranslation();
@@ -26,6 +26,10 @@ export default function CoursePass() {
   const [selectedOption, setSelectedOption] = useState(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [essayAnswer, setEssayAnswer] = useState('');
+
+  // Mobile sidebar
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarRef = useRef(null);
   
   useEffect(() => {
     async function loadCourse() {
@@ -140,88 +144,129 @@ export default function CoursePass() {
     }
   } catch (e) { console.error(e) }
 
+  // Shared sidebar content
+  const SidebarContent = ({ onNavigate }) => (
+    <>
+      {/* Шапка сайдбара */}
+      <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
+        <div className="flex items-center justify-between mb-4">
+          <button
+            onClick={() => navigate('/app')}
+            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors text-zinc-500 dark:text-zinc-400"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div className="flex items-center gap-1">
+            <LanguageSwitcher />
+            <ThemeToggle />
+          </div>
+        </div>
+
+        <h2 className="font-semibold text-[14px] text-zinc-900 dark:text-white mb-3 line-clamp-2">
+          {course.title}
+        </h2>
+
+        {/* Прогресс-бар */}
+        <div className="w-full h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-teal-500 dark:bg-[#2DD4BF] rounded-full transition-all duration-300"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+        <div className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+          {t('coursePass.progress', { percent: progressPercent })}
+        </div>
+      </div>
+
+      {/* Список уроков */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-1">
+        {modules.map((m, index) => {
+          const isCompleted = index < completedModules;
+          const isActive = index === currentModuleIndex;
+          const isLocked = index > completedModules;
+
+          return (
+            <button
+              key={m.id}
+              disabled={isLocked}
+              onClick={() => {
+                setCurrentModuleIndex(index);
+                setSelectedOption(null);
+                setIsAnswered(false);
+                onNavigate?.();
+              }}
+              className={`w-full text-left py-2 px-3 rounded-lg flex items-center transition-colors duration-150 ease-out group ${
+                isActive
+                  ? 'bg-teal-50 dark:bg-teal-900/30'
+                  : isCompleted
+                    ? 'hover:bg-zinc-100 dark:hover:bg-zinc-700/50'
+                    : 'opacity-50 cursor-not-allowed'
+              }`}
+            >
+              <div className="mr-3 shrink-0 flex items-center justify-center w-5 h-5">
+                {isCompleted && !isActive && <Check size={16} className="text-teal-500 dark:text-[#2DD4BF]" />}
+                {isActive && <div className="w-1.5 h-1.5 rounded-full bg-teal-500 dark:bg-[#2DD4BF]" />}
+                {isLocked && <Lock size={14} className="text-zinc-400" strokeWidth={1.5} />}
+              </div>
+              <span className={`text-[13px] leading-tight ${
+                isActive
+                  ? 'text-zinc-900 dark:text-white font-medium'
+                  : 'text-zinc-600 dark:text-zinc-400'
+              }`}>
+                {m.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+
   return (
     <div className="h-screen w-screen flex overflow-hidden bg-white dark:bg-[#18181B] font-sans">
-      
-      {/* Левый сайдбар (Навигация Сириус) */}
-      <aside className="w-[280px] md:w-[320px] shrink-0 h-full flex flex-col bg-[#F9FAFB] dark:bg-[#27272A] border-r border-zinc-200 dark:border-zinc-700">
-        
-        {/* Шапка сайдбара */}
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
-          <div className="flex items-center justify-between mb-4">
-            <button
-              onClick={() => navigate('/app')}
-              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors text-zinc-500 dark:text-zinc-400"
-            >
-              <ArrowLeft size={20} />
-            </button>
-            <div className="flex items-center gap-1">
-              <LanguageSwitcher />
-              <ThemeToggle />
-            </div>
-          </div>
-          
-          <h2 className="font-semibold text-[14px] text-zinc-900 dark:text-white mb-3 line-clamp-2">
-            {course.title}
-          </h2>
-          
-          {/* Прогресс-бар */}
-          <div className="w-full h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-teal-500 dark:bg-[#2DD4BF] rounded-full transition-all duration-300"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-          <div className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-            {t('coursePass.progress', { percent: progressPercent })}
-          </div>
-        </div>
 
-        {/* Список уроков */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          {modules.map((m, index) => {
-            const isCompleted = index < completedModules;
-            const isActive = index === currentModuleIndex;
-            const isLocked = index > completedModules; // Strict sequential access
-
-            return (
-              <button
-                key={m.id}
-                disabled={isLocked}
-                onClick={() => {
-                  setCurrentModuleIndex(index);
-                  setSelectedOption(null);
-                  setIsAnswered(false);
-                }}
-                className={`w-full text-left py-2 px-3 rounded-lg flex items-center transition-colors duration-150 ease-out group ${
-                  isActive 
-                    ? 'bg-teal-50 dark:bg-teal-900/30' 
-                    : isCompleted
-                      ? 'hover:bg-zinc-100 dark:hover:bg-zinc-700/50'
-                      : 'opacity-50 cursor-not-allowed'
-                }`}
-              >
-                <div className="mr-3 shrink-0 flex items-center justify-center w-5 h-5">
-                  {isCompleted && !isActive && <Check size={16} className="text-teal-500 dark:text-[#2DD4BF]" />}
-                  {isActive && <div className="w-1.5 h-1.5 rounded-full bg-teal-500 dark:bg-[#2DD4BF]" />}
-                  {isLocked && <Lock size={14} className="text-zinc-400" strokeWidth={1.5} />}
-                </div>
-                <span className={`text-[13px] leading-tight ${
-                  isActive 
-                    ? 'text-zinc-900 dark:text-white font-medium' 
-                    : 'text-zinc-600 dark:text-zinc-400'
-                }`}>
-                  {m.label}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-[320px] shrink-0 h-full flex-col bg-[#F9FAFB] dark:bg-[#27272A] border-r border-zinc-200 dark:border-zinc-700">
+        <SidebarContent />
       </aside>
+
+      {/* Mobile sidebar drawer */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-50 animate-overlay-in">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
+          <div ref={sidebarRef} className="absolute left-0 top-0 h-full w-[300px] flex flex-col bg-[#F9FAFB] dark:bg-[#27272A] border-r border-zinc-200 dark:border-zinc-700 shadow-2xl animate-slide-in-left">
+            <div className="flex items-center justify-between px-4 pt-4 pb-2">
+              <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{t('coursePass.modules') || 'Модули'}</span>
+              <button onClick={() => setSidebarOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors text-zinc-500 dark:text-zinc-400">
+                <X size={18} />
+              </button>
+            </div>
+            <SidebarContent onNavigate={() => setSidebarOpen(false)} />
+          </div>
+        </div>
+      )}
 
       {/* Правая колонка: Зона теории и тестирования */}
       <main className="flex-1 overflow-y-auto bg-white dark:bg-[#18181B] relative">
-        <div className="max-w-[700px] mx-auto py-12 px-6 md:px-8 pb-32 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {/* Mobile header */}
+        <div className="md:hidden sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-white dark:bg-[#18181B] border-b border-zinc-200 dark:border-zinc-700">
+          <button
+            onClick={() => navigate('/app')}
+            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-zinc-500 dark:text-zinc-400 shrink-0"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <p className="flex-1 text-[13px] font-medium text-zinc-900 dark:text-white truncate">
+            {currentModule.label}
+          </p>
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-zinc-500 dark:text-zinc-400 shrink-0"
+          >
+            <Menu size={20} />
+          </button>
+        </div>
+        <div className="max-w-[700px] mx-auto pt-6 md:pt-12 px-4 md:px-8 pb-16 animate-in fade-in slide-in-from-bottom-2 duration-300">
           
           {currentModule.module_type === 'theory' && theory && (
             <>

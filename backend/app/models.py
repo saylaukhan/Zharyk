@@ -331,6 +331,55 @@ class TestQuestion(Base):
     test = relationship("Test", back_populates="questions")
 
 
+class AuditLog(Base):
+    """Immutable audit trail for sensitive data-access actions."""
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    actor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    actor_name = Column(String, nullable=False)        # snapshot – never changes
+    actor_role = Column(String, nullable=False)        # snapshot
+    action = Column(String, nullable=False, index=True)
+    target_user_id = Column(Integer, nullable=True, index=True)
+    target_anonymous_id = Column(String, nullable=True)  # snapshot
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    target_classes = Column(JSON, nullable=True)   # [] = all classes
+    target_roles = Column(JSON, nullable=True)      # e.g. ["student"]
+    status = Column(String, default="draft")        # draft | active | completed
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    course = relationship("Course")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    participants = relationship(
+        "CampaignParticipant",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+    )
+
+
+class CampaignParticipant(Base):
+    __tablename__ = "campaign_participants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    enrolled_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    campaign = relationship("Campaign", back_populates="participants")
+    user = relationship("User")
+
+
 class TestResult(Base):
     __tablename__ = "test_results"
 

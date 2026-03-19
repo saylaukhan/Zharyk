@@ -5,17 +5,18 @@ from typing import List
 from ..database import get_db
 from ..models import Alert, User, UserRole, ChatHistory
 from ..schemas import AlertOut, AlertRich
-from ..auth import require_roles
+from ..auth import require_roles, get_current_user
+from ..services.audit import write_audit
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 
 @router.get("/rich", response_model=List[AlertRich])
 def list_rich_alerts(
-    resolved: bool = False, 
-    limit: int = 50, 
+    resolved: bool = False,
+    limit: int = 50,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.psychologist, UserRole.director))
+    current_user: User = Depends(require_roles(UserRole.psychologist, UserRole.director)),
 ):
     alerts_data = (
         db.query(Alert, User.anonymous_id, User.class_name)
@@ -38,6 +39,11 @@ def list_rich_alerts(
             "created_at": alert.created_at,
             "is_resolved": alert.is_resolved
         })
+    write_audit(
+        db, current_user.id, current_user.username, current_user.role,
+        "VIEW_ALERTS",
+        reason=f"Viewed {len(res)} alerts (resolved={resolved})",
+    )
     return res
 
 
@@ -53,7 +59,11 @@ def list_alerts(resolved: bool = False, limit: int = 50, db: Session = Depends(g
 
 
 @router.patch("/{alert_id}/resolve")
-def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
+def resolve_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     from sqlalchemy.sql import func
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
@@ -61,6 +71,12 @@ def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
     alert.is_resolved = True
     alert.resolved_at = func.now()
     db.commit()
+    write_audit(
+        db, current_user.id, current_user.username, current_user.role,
+        "RESOLVE_ALERT",
+        target_user_id=alert.user_id,
+        reason=f"Alert #{alert_id} ({alert.level}) resolved",
+    )
     return {"ok": True}
 
 

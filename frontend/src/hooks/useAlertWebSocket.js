@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 
-const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+const WS_BASE = import.meta.env.VITE_WS_URL ||
+  `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
 
 /**
  * Connects a psychologist to the real-time alert WebSocket.

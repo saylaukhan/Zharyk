@@ -7,7 +7,7 @@ import {
   ArrowLeft, Search, Video, Clock, Layers, Headphones, Activity,
   Zap, BatteryLow, Heart, Rocket, Brain, SearchX, Flame, Sun,
   BookOpenCheck, Trophy, BarChart, User, MessageCircle, ClipboardList, LogOut, Edit2, Trash2, Check, X,
-  ChevronRight, ChevronLeft, CheckCircle, Target, Shield, AlertTriangle, Square, Pencil, Flag, Wind
+  ChevronRight, ChevronLeft, CheckCircle, Target, Shield, AlertTriangle, Square, Pencil, Flag, Wind, Menu
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { Line, Radar } from 'react-chartjs-2'
@@ -19,13 +19,13 @@ import ThemeToggle from '../components/ThemeToggle'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import { useTheme } from '../context/ThemeContext'
 import PasswordChangeForm from '../components/PasswordChangeForm'
-import { fetchUserMetrics, fetchTests, fetchTestDetail, submitTest, fetchMyTestResults, updateSettings, fetchStreak } from '../api/api'
+import { fetchUserMetrics, fetchTests, fetchTestDetail, submitTest, fetchMyTestResults, updateSettings, fetchStreak, fetchMyCampaigns } from '../api/api'
 import { getTestLevelInfo, getTestInterpretation } from '../utils/testLevels'
 import { useTranslation } from 'react-i18next'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend, RadialLinearScale)
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+const API = import.meta.env.VITE_API_URL || '/api/v1'
 
 const CATEGORY_META = {
   'Стресс': { icon: Zap, iconColor: 'text-zharyq-orange', bg: 'bg-orange-50', tagColor: 'text-zharyq-orange', progressColor: 'bg-zharyq-teal' },
@@ -83,11 +83,123 @@ function getDynamicGreeting(metrics, testHistory, t) {
   return { timeGreeting, subtitle }
 }
 
+// ── Campaign notification dropdown panel ────────────────────────────────────
+function CampaignNotifPanel({ notifs, onClose, onGoToCourses, t, isDark, align = 'right' }) {
+  const active = notifs.filter(n => n.campaign_status === 'active')
+
+  const timeAgoShort = (iso) => {
+    if (!iso) return ''
+    const diff = Date.now() - new Date(iso).getTime()
+    const m = Math.floor(diff / 60000)
+    if (m < 60) return t('psychologist.timeMinutesAgo', { minutes: m }) || `${m}m`
+    const h = Math.floor(m / 60)
+    if (h < 24) return t('psychologist.timeHoursAgo', { hours: h }) || `${h}h`
+    return t('psychologist.timeDaysAgo', { days: Math.floor(h / 24) }) || `${Math.floor(h / 24)}d`
+  }
+
+  const surface = isDark ? 'bg-[#27272A] border-[#3F3F46]' : 'bg-white border-zharyq-border'
+  const rowHover = isDark ? 'hover:bg-zinc-800' : 'hover:bg-zharyq-bg'
+  const divider = isDark ? 'divide-zinc-700' : 'divide-zharyq-border'
+  const borderT = isDark ? 'border-zinc-700' : 'border-zharyq-border'
+
+  return (
+    <div className={`absolute top-full mt-3 w-72 border rounded-2xl z-50 overflow-hidden shadow-xl ${surface} ${align === 'left' ? 'left-0' : 'right-0'}`}>
+      {/* Header */}
+      <div className={`flex items-center justify-between px-4 py-3 border-b ${borderT}`}>
+        <h3 className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-zharyq-dark'}`}>
+          {t('campaign.notifications')}
+        </h3>
+        <div className="flex items-center gap-2">
+          {active.length > 0 && (
+            <span className="text-[10px] font-bold bg-zharyq-orange text-white px-1.5 py-0.5 rounded-full">
+              {active.length}
+            </span>
+          )}
+          <button onClick={onClose} className="text-zharyq-gray hover:text-zharyq-dark dark:hover:text-white transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      {notifs.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-zharyq-teal-light flex items-center justify-center mb-3">
+            <Bell size={22} className="text-zharyq-teal" />
+          </div>
+          <p className={`text-sm font-medium mb-1 ${isDark ? 'text-white' : 'text-zharyq-dark'}`}>
+            {t('campaign.notifEmpty')}
+          </p>
+          <p className="text-xs text-zharyq-gray leading-relaxed">{t('campaign.notifEmptyDesc')}</p>
+        </div>
+      ) : (
+        <>
+          <div className={`max-h-72 overflow-y-auto divide-y ${divider}`}>
+            {notifs.slice(0, 8).map((n) => {
+              const done = n.course_completed
+              const started = n.course_started && !done
+              return (
+                <div
+                  key={n.id}
+                  onClick={onGoToCourses}
+                  className={`px-4 py-3 transition-colors cursor-pointer ${rowHover}`}
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Status dot */}
+                    <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                      done ? 'bg-emerald-500' : started ? 'bg-blue-400' : 'bg-zharyq-orange'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <p className={`text-xs font-semibold truncate ${isDark ? 'text-white' : 'text-zharyq-dark'}`}>
+                          {n.title}
+                        </p>
+                        <span className="text-[10px] text-zharyq-gray shrink-0">
+                          {timeAgoShort(n.enrolled_at)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-zharyq-gray truncate">{n.course_title}</p>
+                      <span className={`mt-1 inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${
+                        done
+                          ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
+                          : started
+                            ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30'
+                            : 'bg-orange-50 text-zharyq-orange border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30'
+                      }`}>
+                        {done ? t('campaign.notifStatusDone') : started ? t('campaign.notifStatusInProgress') : t('campaign.notifStatusNew')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className={`border-t ${borderT}`}>
+            <button
+              onClick={onGoToCourses}
+              className="w-full px-4 py-2.5 text-xs font-semibold text-zharyq-orange hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-colors text-center"
+            >
+              {t('campaign.notifGoToCourses')} →
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function StudentApp() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { isDark } = useTheme()
   const { user: authUser, logout, token } = useAuth()
+
+  // Helpers for campaign notification "seen" tracking (defined after authUser)
+  const seenIds = () => JSON.parse(localStorage.getItem(`zharyq_seen_campaigns_${authUser?.id}`) || '[]')
+  const markAllSeen = (notifs) => localStorage.setItem(
+    `zharyq_seen_campaigns_${authUser?.id}`,
+    JSON.stringify(notifs.map(n => n.id))
+  )
 
   const FILTER_LABELS = {
     all: t('student.filterAll'),
@@ -122,6 +234,7 @@ export default function StudentApp() {
   const [apiCourses, setApiCourses] = useState([])
   const [coursesLoading, setCoursesLoading] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [aiRecommendations, setAiRecommendations] = useState([])
   const [chatSessions, setChatSessions] = useState([])
@@ -134,6 +247,11 @@ export default function StudentApp() {
   const [streakData, setStreakData] = useState({ streak: 0, today_active: false, week_days: [false,false,false,false,false,false,false] })
   const eventSourceRef = useRef(null)
   const avatarFileInputRef = useRef(null)
+
+  // ── Campaign notifications state ──
+  const [campaignNotifs, setCampaignNotifs] = useState([])
+  const [notifOpen, setNotifOpen] = useState(false)
+  const notifRef = useRef(null)
 
   // ── Voice recording state ──
   const [isRecording, setIsRecording] = useState(false)
@@ -152,6 +270,7 @@ export default function StudentApp() {
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
   const accountMenuRef = useRef(null)
+  const mobileMenuRef = useRef(null)
 
   const toggleRecording = () => {
     if (isRecording) {
@@ -219,6 +338,16 @@ export default function StudentApp() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target)) {
+        setMobileMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   // Sync personalized mode and avatar from localStorage when user is loaded
   useEffect(() => {
     if (!authUser?.id) return
@@ -231,6 +360,19 @@ export default function StudentApp() {
   useEffect(() => {
     fetchStreak().then(setStreakData).catch(() => {})
   }, [])
+
+  // Load campaign notifications on mount
+  useEffect(() => {
+    fetchMyCampaigns().then(setCampaignNotifs).catch(() => {})
+  }, [])
+
+  // Close notif panel on outside click
+  useEffect(() => {
+    if (!notifOpen) return
+    const handler = (e) => { if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [notifOpen])
 
   // Load test history on mount for the right sidebar
   useEffect(() => {
@@ -724,10 +866,18 @@ export default function StudentApp() {
           <div className="flex items-center gap-2.5">
             <LanguageSwitcher />
             <ThemeToggle />
-            <button className="relative text-zharyq-gray hover:text-zharyq-dark transition-colors">
-              <Bell size={20} />
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" />
-            </button>
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => { setNotifOpen(o => !o); if (!notifOpen) markAllSeen(campaignNotifs) }}
+                className={`relative transition-colors ${notifOpen ? 'text-zharyq-dark dark:text-white' : 'text-zharyq-gray hover:text-zharyq-dark dark:hover:text-white'}`}
+              >
+                <Bell size={20} />
+                {campaignNotifs.filter(n => !seenIds().includes(n.id) && n.campaign_status === 'active').length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-zharyq-orange rounded-full border border-white dark:border-[#27272A]" />
+                )}
+              </button>
+              {notifOpen && <CampaignNotifPanel align="left" notifs={campaignNotifs} onClose={() => setNotifOpen(false)} onGoToCourses={() => { setView('courses'); setNotifOpen(false) }} t={t} isDark={isDark} />}
+            </div>
           </div>
         </div>
         <button onClick={createNewSession} className="w-full bg-zharyq-orange hover:bg-zharyq-orange-hover text-white text-sm font-medium py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 mb-8">
@@ -735,7 +885,7 @@ export default function StudentApp() {
           {t('student.newSession')}
         </button>
         <div className="flex flex-col gap-1 mb-8">
-          <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">{t('student.navAbout').split(' ')[0]}</p>
+          <p className="text-xs font-semibold text-zharyq-gray uppercase tracking-wider mb-2 px-2">{t('student.navMenu')}</p>
           {navItems.map(item => (
             <button
               key={item.id}
@@ -804,24 +954,34 @@ export default function StudentApp() {
       {/* MAIN */}
       <main className={`flex-1 flex flex-col h-full relative pb-16 md:pb-0 ${isDark ? 'bg-[#18181B] text-zinc-100' : 'bg-white text-zharyq-dark'}`}>
         {/* Mobile header */}
-        <header className="md:hidden border-b border-zharyq-border p-4 flex items-center justify-between bg-white z-10">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-zharyq-orange flex items-center justify-center">
-              <Sparkles size={12} className="text-white" />
+        <header className={`md:hidden border-b border-zharyq-border p-4 flex items-center justify-between z-10 ${isDark ? 'bg-[#18181B]' : 'bg-white'}`}>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setMobileMenuOpen(true)} className="text-zharyq-gray hover:text-zharyq-dark transition-colors">
+              <Menu size={22} />
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-zharyq-orange flex items-center justify-center">
+                <Sparkles size={12} className="text-white" />
+              </div>
+              <span className="font-semibold">Zharyq</span>
             </div>
-            <span className="font-semibold">Zharyq</span>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => setView('about')} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title={t('student.aboutTitle')}>
-              <Info size={20} />
-            </button>
-            <button className="relative text-zharyq-gray"><Bell size={20} /><span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-white" /></button>
+            <div className="relative">
+              <button
+                onClick={() => { setNotifOpen(o => !o); if (!notifOpen) markAllSeen(campaignNotifs) }}
+                className="relative text-zharyq-gray hover:text-zharyq-dark dark:hover:text-white transition-colors"
+              >
+                <Bell size={20} />
+                {campaignNotifs.filter(n => !seenIds().includes(n.id) && n.campaign_status === 'active').length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-zharyq-orange rounded-full border border-white dark:border-[#27272A]" />
+                )}
+              </button>
+              {notifOpen && <CampaignNotifPanel notifs={campaignNotifs} onClose={() => setNotifOpen(false)} onGoToCourses={() => { setView('courses'); setNotifOpen(false) }} t={t} isDark={isDark} />}
+            </div>
             <div className="bg-zharyq-teal-light border border-teal-200 text-zharyq-teal text-xs font-medium px-3 py-1 rounded-full flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-zharyq-teal" />{t('student.statusNormal')}
             </div>
-            <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors" title={t('common.logout')}>
-              <LogOut size={16} />
-            </button>
           </div>
         </header>
 
@@ -1826,6 +1986,116 @@ export default function StudentApp() {
           </button>
         ))}
       </nav>
+
+      {/* MOBILE MENU DRAWER */}
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-50 animate-overlay-in">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileMenuOpen(false)} />
+          <div ref={mobileMenuRef} className={`absolute left-0 top-0 h-full w-72 flex flex-col shadow-2xl animate-slide-in-left ${isDark ? 'bg-[#18181B]' : 'bg-white'}`}>
+            {/* Drawer header */}
+            <div className={`flex items-center justify-between p-5 border-b ${isDark ? 'border-[#3F3F46]' : 'border-zharyq-border'}`}>
+              <Link to="/" className="flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <div className="w-6 h-6 rounded-full bg-zharyq-orange flex items-center justify-center">
+                  <Sparkles size={12} className="text-white" />
+                </div>
+                <span className="font-semibold text-lg tracking-tight">Zharyq</span>
+              </Link>
+              <button onClick={() => setMobileMenuOpen(false)} className="text-zharyq-gray hover:text-zharyq-dark transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Workspaces */}
+            <div className="p-4">
+              <p className={`text-xs font-semibold uppercase tracking-wider mb-2 px-2 ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{t('student.navMenu')}</p>
+              <div className="flex flex-col gap-1">
+                {navItems.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => { setView(item.id); setMobileMenuOpen(false) }}
+                    className={`nav-item ${view === item.id ? 'active-nav' : ''}`}
+                  >
+                    <item.icon size={16} />
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* New session */}
+            <div className="px-4 pb-3">
+              <button onClick={() => { createNewSession(); setMobileMenuOpen(false) }} className="w-full bg-zharyq-orange hover:bg-zharyq-orange-hover text-white text-sm font-medium py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2">
+                <Plus size={16} />
+                {t('student.newSession')}
+              </button>
+            </div>
+
+            {/* Chat history */}
+            <div className={`flex-1 overflow-y-auto px-4 py-3 border-t ${isDark ? 'border-[#3F3F46]' : 'border-zharyq-border'}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wider mb-2 px-2 ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>{t('student.chatHistory')}</p>
+              <div className="flex flex-col gap-1">
+                {chatSessions.map(session => (
+                  <div
+                    key={session.id}
+                    className={`group flex items-center justify-between px-3 py-2 text-sm truncate rounded-md cursor-pointer transition-colors ${
+                      currentSessionId === session.id
+                        ? (isDark ? 'bg-zinc-700 text-zinc-100 font-medium' : 'bg-gray-100 text-zharyq-dark font-medium')
+                        : (isDark ? 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800' : 'text-zharyq-gray hover:text-zharyq-dark hover:bg-gray-50')
+                    }`}
+                    onClick={() => { loadSession(session.id); setMobileMenuOpen(false) }}
+                  >
+                    {editingSessionId === session.id ? (
+                      <div className="flex w-full items-center gap-1" onClick={e => e.stopPropagation()}>
+                        <input autoFocus value={editTitle} onChange={e => setEditTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveEditedSession(session.id, e)} className="flex-1 text-xs px-1 border border-zharyq-border rounded outline-none focus:ring-1 focus:ring-zharyq-orange" />
+                        <button onClick={e => saveEditedSession(session.id, e)} className="text-green-600 hover:text-green-700"><Check size={14}/></button>
+                        <button onClick={() => setEditingSessionId(null)} className="text-gray-400 hover:text-gray-600"><X size={14}/></button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="truncate flex-1 pr-2">{session.title}</span>
+                        <div className={`${currentSessionId === session.id ? 'flex' : 'hidden group-hover:flex'} items-center gap-1 opacity-60`}>
+                          <button onClick={e => startEditingSession(session.id, session.title, e)} className="hover:text-zharyq-orange px-1"><Edit2 size={13}/></button>
+                          <button onClick={e => deleteSession(session, e)} className="hover:text-red-500 px-1"><Trash2 size={13}/></button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Profile */}
+            <div className={`p-4 border-t flex items-center gap-3 ${isDark ? 'border-[#3F3F46]' : 'border-zharyq-border'}`}>
+              <button onClick={() => { setView('profile'); setMobileMenuOpen(false) }} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-75 transition-opacity text-left">
+                <div className={`w-9 h-9 rounded-full flex justify-center items-center font-bold text-xs shrink-0 overflow-hidden ${privacySettings.personalized ? 'bg-gradient-to-tr from-zharyq-teal to-blue-400 text-white' : (isDark ? 'bg-[#27272A] border border-[#3F3F46]' : 'bg-[#F9FAFB] border border-[#E5E7EB]')}`}>
+                  {privacySettings.personalized && avatarUrl
+                    ? <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                    : privacySettings.personalized
+                      ? <span className="text-white">{authUser?.username?.[0]?.toUpperCase() || 'S'}</span>
+                      : <User size={15} strokeWidth={1.5} className={isDark ? 'text-zinc-500' : 'text-[#9CA3AF]'} />
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className={`text-sm font-medium truncate ${isDark ? 'text-zinc-100' : 'text-zharyq-dark'}`}>{authUser?.username || (authUser?.role === 'employee' ? t('student.profileEmployee') : t('student.profileStudent'))}</p>
+                    {streakData.streak > 0 && (
+                      <span className="bg-orange-100 text-zharyq-orange text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-orange-200 shrink-0">🔥 {streakData.streak}</span>
+                    )}
+                  </div>
+                  {authUser?.role !== 'employee' && (
+                    <p className={`text-[10px] truncate flex items-center gap-1 ${isDark ? 'text-zinc-400' : 'text-zharyq-gray'}`}>
+                      <GraduationCap size={12} /> {authUser?.class_name || t('student.profileClassNotSet')}
+                    </p>
+                  )}
+                </div>
+              </button>
+              <button onClick={logout} className="text-zharyq-gray hover:text-zharyq-dark transition-colors shrink-0" title={t('nav.logout')}>
+                <LogOut size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* DELETE CONFIRMATION MODAL */}
       {deleteConfirmSession && (

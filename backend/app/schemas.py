@@ -438,6 +438,65 @@ class TestResultOut(BaseModel):
         from_attributes = True
 
 
+class AuditLogOut(BaseModel):
+    id: int
+    actor_id: Optional[int] = None
+    actor_name: str
+    actor_role: str
+    action: str
+    target_user_id: Optional[int] = None
+    target_anonymous_id: Optional[str] = None
+    reason: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ── Campaign schemas ───────────────────────────────────────────
+
+class CampaignNotificationOut(BaseModel):
+    """Compact campaign view returned to the enrolled student."""
+    id: int
+    title: str
+    description: Optional[str] = None
+    course_id: int
+    course_title: Optional[str] = None
+    campaign_status: str
+    enrolled_at: datetime
+    course_started: bool = False
+    course_completed: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class CampaignCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    course_id: int
+    target_classes: Optional[List[str]] = None
+    target_roles: Optional[List[str]] = None
+
+
+class CampaignOut(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    course_id: int
+    course_title: Optional[str] = None
+    target_classes: Optional[List[str]] = None
+    target_roles: Optional[List[str]] = None
+    status: str
+    created_by_id: Optional[int] = None
+    created_at: datetime
+    total_participants: int = 0
+    completed_participants: int = 0
+
+    class Config:
+        from_attributes = True
+
+
 class AIDeltaOutput(BaseModel):
     reasoning: str = Field(description="Краткий семантический анализ сообщения.")
     stress_delta: int = Field(description="Дельта стресса (-30 до 30)")

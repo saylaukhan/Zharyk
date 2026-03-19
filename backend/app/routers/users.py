@@ -8,6 +8,7 @@ from ..schemas import UserOut, StudentMetrics, UserRegister, UserBatchResult, Us
 from sqlalchemy import func
 from ..auth import get_current_user, require_roles
 from ..models import UserRole
+from ..services.audit import write_audit
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 def create_users_batch(
     users_data: List[UserRegister],
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.director)),
+    current_user: User = Depends(require_roles(UserRole.director)),
 ):
     from ..auth import hash_password
     
@@ -55,14 +56,20 @@ def create_users_batch(
             failed += 1
             details.append(UserBatchItemResult(username=user_data.username, success=False, error="Ошибка базы данных"))
             
-    return UserBatchResult(successful=successful, failed=failed, details=details)
+    result = UserBatchResult(successful=successful, failed=failed, details=details)
+    write_audit(
+        db, current_user.id, current_user.username, current_user.role,
+        "IMPORT_USERS",
+        reason=f"Batch import: {successful} created, {failed} failed",
+    )
+    return result
 
 
 @router.post("/", response_model=UserOut)
 def create_user_by_director(
     user_data: UserRegister,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.director)),
+    current_user: User = Depends(require_roles(UserRole.director)),
 ):
     from ..auth import hash_password
     
@@ -86,13 +93,20 @@ def create_user_by_director(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    write_audit(
+        db, current_user.id, current_user.username, current_user.role,
+        "CREATE_USER",
+        target_user_id=new_user.id,
+        target_anonymous_id=new_user.anonymous_id,
+        reason=f"Created user '{new_user.username}' with role '{new_user.role}'",
+    )
     return new_user
 
 @router.get("/with-metrics", response_model=List[StudentMetrics])
 def get_users_with_metrics(
     role: Optional[UserRole] = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.psychologist, UserRole.director))
+    current_user: User = Depends(require_roles(UserRole.psychologist, UserRole.director)),
 ):
     # Get users with session/course counts and last checkin
     base_query = (
@@ -112,6 +126,11 @@ def get_users_with_metrics(
         
     users_query = base_query.group_by(User.id).all()
 
+    write_audit(
+        db, current_user.id, current_user.username, current_user.role,
+        "VIEW_METRICS_BATCH",
+        reason=f"role_filter={role or 'all'}",
+    )
     if not users_query:
         return []
 

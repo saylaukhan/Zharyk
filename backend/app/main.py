@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, func
 from .database import engine, Base, SessionLocal
-from .routers import users, checkins, alerts, sessions, analytics, courses, notes, auth, tests, ai_chat, recommendations
+from .routers import users, checkins, alerts, sessions, analytics, courses, notes, auth, tests, ai_chat, recommendations, audit, campaigns
 from .routers import ws as ws_router
 
 logger = logging.getLogger(__name__)
@@ -200,6 +200,8 @@ app.include_router(notes.router, prefix="/api/v1")
 app.include_router(ai_chat.router, prefix="/api/v1")
 app.include_router(tests.router, prefix="/api/v1")
 app.include_router(recommendations.router, prefix="/api/v1")
+app.include_router(audit.router, prefix="/api/v1")
+app.include_router(campaigns.router, prefix="/api/v1")
 app.include_router(ws_router.router)  # WebSocket: no /api/v1 prefix, path is /ws/alerts/{id}
 
 
