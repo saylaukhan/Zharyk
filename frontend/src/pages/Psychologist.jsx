@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Search, AlertTriangle, Activity, CheckCircle, X, Plus,
   ClipboardList, Clock, Layers, Zap, Brain, BatteryLow,
@@ -106,6 +106,7 @@ function studentDisplayName(u, t) {
 export default function Psychologist() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { isDark } = useTheme()
   const { user: authUser, logout } = useAuth()
 
@@ -125,7 +126,12 @@ export default function Psychologist() {
     showMore: (total) => t('psychologist.calendarShowMore', { count: total }),
   }
 
-  const [view, setView] = useState('alerts')
+  const initialView = searchParams.get('tab') || 'alerts'
+  const [view, setView] = useState(initialView)
+
+  useEffect(() => {
+    setSearchParams({ tab: view }, { replace: true })
+  }, [view, setSearchParams])
   const [profileOpen, setProfileOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
 
@@ -134,6 +140,44 @@ export default function Psychologist() {
   const [sessions, setSessions] = useState([])
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(true)
+
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterClass, setFilterClass] = useState('Все классы')
+
+  const uniqueClasses = useMemo(() => {
+    const classes = new Set()
+    students.forEach(s => { if (s.class_name) classes.add(s.class_name) })
+    alerts.forEach(a => {
+      const className = a.class_name || (students.find(s => s.id === (a.user_id ?? a.student_id))?.class_name)
+      if (className) classes.add(className)
+    })
+    return Array.from(classes).sort()
+  }, [students, alerts])
+
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      const matchesSearch = studentDisplayName(s).toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            (s.class_name && s.class_name.toLowerCase().includes(searchQuery.toLowerCase()))
+      const matchesClass = filterClass === 'Все классы' || s.class_name === filterClass
+      return matchesSearch && matchesClass
+    })
+  }, [students, searchQuery, filterClass])
+
+  const filteredAlerts = useMemo(() => {
+    return alerts.filter(a => {
+      const uid = a.user_id ?? a.student_id;
+      const studentRecord = students.find(s => s.id === uid);
+      const displayName = studentRecord ? studentDisplayName(studentRecord) : (a.anonymous_id || a.student_name || (uid ? `Студент #${uid}` : 'Неизвестный'));
+      const className = a.class_name || studentRecord?.class_name || '-';
+
+      const matchesSearch = displayName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            className.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            (a.alert_type && a.alert_type.toLowerCase().includes(searchQuery.toLowerCase()))
+      
+      const matchesClass = filterClass === 'Все классы' || className === filterClass
+      return matchesSearch && matchesClass
+    })
+  }, [alerts, students, searchQuery, filterClass])
 
   const [courses, setCourses] = useState([])
   const [coursesLoading, setCoursesLoading] = useState(false)
@@ -775,10 +819,23 @@ export default function Psychologist() {
               <>
                 <div className="relative">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zharyq-gray pointer-events-none" />
-                  <input type="text" placeholder={t('psychologist.searchPlaceholder')} className="border border-zharyq-border rounded-xl text-zharyq-dark pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t('psychologist.searchPlaceholder')}
+                    className="border border-zharyq-border rounded-xl text-zharyq-dark pl-9 pr-4 py-2 text-sm bg-white focus:border-zharyq-orange focus:ring-1 focus:ring-zharyq-orange transition-all w-52"
+                  />
                 </div>
-                <select className="border border-zharyq-border rounded-xl px-3 text-zharyq-dark py-2 text-sm bg-white focus:ring-0 cursor-pointer">
-                  <option>{t('psychologist.allClasses')}</option>
+                <select
+                  value={filterClass}
+                  onChange={(e) => setFilterClass(e.target.value)}
+                  className="border border-zharyq-border rounded-xl px-3 text-zharyq-dark py-2 text-sm bg-white focus:ring-0 cursor-pointer"
+                >
+                  <option value="Все классы">{t('psychologist.allClasses')}</option>
+                  {uniqueClasses.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
                 </select>
               </>
             )}
@@ -817,7 +874,7 @@ export default function Psychologist() {
                     />
                   )}
                   {(() => {
-                    const unresolvedAlerts = alerts.filter(a => !a.is_resolved);
+                    const unresolvedAlerts = filteredAlerts.filter(a => !a.is_resolved);
                     const unresolvedStudentIds = new Set(unresolvedAlerts.map(a => a.user_id ?? a.student_id).filter(Boolean));
                     const statsCards = [
                       { icon: AlertTriangle, bg: 'bg-red-50', color: 'text-red-500', count: unresolvedAlerts.filter(a => a.level === 'critical').length, label: t('psychologist.alertCountCritical') },
@@ -855,7 +912,7 @@ export default function Psychologist() {
                           </tr>
                         </thead>
                         <tbody>
-                          {alerts.filter(a => !a.is_resolved).map((a, i) => {
+                          {filteredAlerts.filter(a => !a.is_resolved).map((a, i) => {
                             const meta = levelMeta(a.level, t);
                             // Support both REST alerts (user_id/anonymous_id) and WS alerts (student_id/student_name)
                             const uid = a.user_id ?? a.student_id;
@@ -892,7 +949,7 @@ export default function Psychologist() {
                               </tr>
                             )
                           })}
-                          {alerts.filter(a => !a.is_resolved).length === 0 && (
+                          {filteredAlerts.filter(a => !a.is_resolved).length === 0 && (
                             <tr><td colSpan="6" className="text-center py-6 text-sm text-zharyq-gray">{t('psychologist.noActiveAlerts')}</td></tr>
                           )}
                         </tbody>
@@ -908,7 +965,7 @@ export default function Psychologist() {
               <div className="flex-1 overflow-y-auto p-6 animate-fade-in-up">
                 <div className="max-w-4xl mx-auto">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-zharyq-dark">
-                    {students.map(u => {
+                    {filteredStudents.map(u => {
                       const stat = studentStatus(u.stress, t);
                       return (
                         <div key={u.id} onClick={() => openProfile(u.id)} className="border border-zharyq-border rounded-2xl p-4 hover:border-zharyq-gray transition-colors cursor-pointer group">
